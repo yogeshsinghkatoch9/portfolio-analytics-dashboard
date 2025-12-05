@@ -87,6 +87,26 @@ EXPECTED_COLUMNS = [
 ]
 
 
+def convert_numpy_types(obj):
+    """
+    Recursively convert numpy types to Python native types for JSON serialization
+    """
+    if isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
+
+
 def clean_numeric_value(value: Any) -> float:
     """Convert any value to float, handling NaN and None"""
     if pd.isna(value) or value is None:
@@ -851,6 +871,9 @@ async def simulate_portfolio(request: SimulationRequest):
                 }
             }
         }
+        
+        # Convert all numpy types to Python native types for JSON serialization
+        response_data = convert_numpy_types(response_data)
         
         # If current portfolio file provided, compare
         if request.current_portfolio_file:
