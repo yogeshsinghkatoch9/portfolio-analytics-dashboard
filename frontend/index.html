@@ -2577,7 +2577,7 @@
 
                     // Try to fetch data first
                     try {
-                        const response = await fetch(`${API_URL}/api/v2/market/search/${query}`);
+                        const response = await fetch(`${API_URL}/api/market/search?q=${query}`);
                         if (response.ok) {
                             const data = await response.json();
                             const results = Array.isArray(data) ? data : (data.results || []);
