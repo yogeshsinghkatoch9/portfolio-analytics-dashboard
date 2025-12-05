@@ -522,10 +522,11 @@ def calculate_advanced_risk_analytics(portfolio: pd.DataFrame) -> Dict[str, Any]
 def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
     """
     Convert JSON holdings list [{'symbol': 'AAPL', 'weight': 50}] to DataFrame
-    with minimal API calls for fast response
+    with REAL historical data - optimized batch fetching
     """
     try:
         import yfinance as yf
+        from datetime import datetime, timedelta
         
         if not holdings:
             return pd.DataFrame()
@@ -536,27 +537,86 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
         # Assume $100k portfolio for simulation
         total_portfolio_value = 100000
         
+        print(f"Fetching historical data for {len(symbols)} symbols...")
+        
+        # BATCH DOWNLOAD - Much faster than individual calls!
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        
+        try:
+            # Download all at once (much faster!)
+            hist_data = yf.download(symbols, start=start_date, end=end_date, progress=False, group_by='ticker')
+            print("Historical data downloaded successfully")
+        except Exception as e:
+            print(f"Batch download failed: {e}, falling back to defaults")
+            hist_data = None
+        
         data = []
         for symbol in symbols:
             try:
                 ticker = yf.Ticker(symbol)
                 
-                # Use ONLY fast_info for speed - no history or full info calls
+                # Get current price
                 try:
                     price = ticker.fast_info.last_price
+                    if price is None or price == 0:
+                        price = 100.0
                 except:
-                    # Fallback to minimal info if fast_info fails
-                    price = 100.0  # Default price for estimation
-                
-                if price is None or price == 0:
-                    price = 100.0  # Default
+                    price = 100.0
                 
                 # Calculate values
                 weight = weight_map[symbol]
                 value = total_portfolio_value * (weight / 100)
                 shares = value / price if price > 0 else 0
                 
-                # Use defaults for fields that would require slow API calls
+                # Calculate real returns from historical data
+                total_return = 0
+                one_day_change_pct = 0
+                
+                if hist_data is not None:
+                    try:
+                        # Handle multi-symbol vs single symbol data structure
+                        if len(symbols) == 1:
+                            symbol_data = hist_data
+                        else:
+                            symbol_data = hist_data[symbol] if symbol in hist_data.columns.levels[0] else None
+                        
+                        if symbol_data is not None and 'Close' in symbol_data:
+                            closes = symbol_data['Close'].dropna()
+                            if len(closes) > 1:
+                                start_price = closes.iloc[0]
+                                end_price = closes.iloc[-1]
+                                total_return = ((end_price - start_price) / start_price) * 100
+                                
+                                # 1-day change
+                                if len(closes) >= 2:
+                                    one_day_change_pct = ((closes.iloc[-1] - closes.iloc[-2]) / closes.iloc[-2]) * 100
+                    except Exception as e:
+                        print(f"Error calculating returns for {symbol}: {e}")
+                
+                # Get sector and other info (quick single call)
+                sector = 'Technology'
+                asset_type = 'Stock'
+                dividend_yield = 0
+                
+                try:
+                    info = ticker.info
+                    sector = info.get('sector', 'Technology')
+                    asset_type = info.get('quoteType', 'Stock')
+                    dividend_yield = info.get('dividendYield', 0) or 0
+                except:
+                    pass  # Use defaults if info fails
+                
+                # Calculate estimated annual income
+                est_annual_income = value * dividend_yield if dividend_yield else 0
+                
+                # Estimate G/L based on return
+                principal = value  # Assume current value as principal for simulation
+                gain_loss_dollars = value * (total_return / 100)
+                gain_loss_pct = total_return
+                
+                one_day_value_change = value * (one_day_change_pct / 100)
+                
                 data.append({
                     'Symbol': symbol,
                     'Description': symbol,
@@ -564,22 +624,22 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
                     'Price ($)': price,
                     'Value ($)': value,
                     'Assets (%)': weight,
-                    'Total Return (%)': 0,  # Default - would need history
-                    'Sector': 'Technology',  # Default - would need full info
-                    'Asset Type': 'Stock',   # Default
-                    'Asset Category': 'Equity',  # Default
-                    'Est Annual Income ($)': 0,  # Default - would need full info
-                    'NFS G/L ($)': 0,
-                    'Principal ($)*': value,  # Assume cost basis = current value
-                    'NFS G/L (%)': 0,
-                    '1-Day Value Change ($)': 0,
-                    '1-Day Price Change (%)': 0,
-                    'Current Yld/Dist Rate (%)': 0
+                    'Total Return (%)': round(total_return, 2),
+                    'Sector': sector,
+                    'Asset Type': asset_type,
+                    'Asset Category': 'Equity',
+                    'Est Annual Income ($)': round(est_annual_income, 2),
+                    'NFS G/L ($)': round(gain_loss_dollars, 2),
+                    'Principal ($)*': principal,
+                    'NFS G/L (%)': round(gain_loss_pct, 2),
+                    '1-Day Value Change ($)': round(one_day_value_change, 2),
+                    '1-Day Price Change (%)': round(one_day_change_pct, 2),
+                    'Current Yld/Dist Rate (%)': round(dividend_yield * 100, 2) if dividend_yield else 0
                 })
                 
             except Exception as e:
                 print(f"Error fetching data for {symbol}: {e}")
-                # Add with defaults even if it fails
+                # Add with defaults if it fails
                 weight = weight_map.get(symbol, 0)
                 value = total_portfolio_value * (weight / 100)
                 data.append({
@@ -601,7 +661,8 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
                     '1-Day Price Change (%)': 0,
                     'Current Yld/Dist Rate (%)': 0
                 })
-                
+        
+        print(f"Portfolio analysis complete with {len(data)} holdings")
         return pd.DataFrame(data)
         
     except Exception as e:
