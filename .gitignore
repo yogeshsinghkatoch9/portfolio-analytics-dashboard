@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application specific
+*.log
+*.pid
+server.log
+.uvicorn_pid
+
+# Data files (optional - uncomment if you don't want to commit data)
+# data/
+# *.db
+# *.sqlite
+
+# Environment variables
+.env
+.env.local
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Test outputs
+htmlcov/
+.coverage
+.tox/
+playwright-report/
+test-results/
+
+# Generated files
+*.pdf

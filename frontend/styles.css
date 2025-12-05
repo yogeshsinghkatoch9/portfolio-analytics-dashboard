@@ -1,0 +1,225 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --primary-gradient: linear-gradient(135deg, #0066CC 0%, #0052A3 100%);
+    --accent-gradient: linear-gradient(135deg, #4A90E2 0%, #0066CC 100%);
+    --success-gradient: linear-gradient(135deg, #0066CC 0%, #0052A3 100%);
+    --glass-bg: rgba(255, 255, 255, 0.95);
+    --glass-border: rgba(0, 102, 204, 0.2);
+}
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background: linear-gradient(135deg, #FFFFFF 0%, #F0F8FF 100%);
+    min-height: 100vh;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #F0F8FF;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4A90E2;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #0066CC;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #F0F8FF;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #4A90E2;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #0066CC;
+}
+
+/* Toast Notifications */
+.toast {
+    min-width: 300px;
+    max-width: 400px;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    animation: slideInRight 0.3s ease-out;
+    backdrop-filter: blur(10px);
+}
+
+.toast.success {
+    background: linear-gradient(135deg, #0066CC 0%, #0052A3 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast.error {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast.info {
+    background: linear-gradient(135deg, #4A90E2 0%, #0066CC 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast.warning {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    color: white;
+}
+
+.toast-content {
+    flex: 1;
+    color: white;
+}
+
+.toast-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: white;
+}
+
+.toast-message {
+    font-size: 14px;
+    opacity: 0.95;
+    color: white;
+}
+
+.toast-close {
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+    color: white;
+}
+
+.toast-close:hover {
+    opacity: 1;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.2s ease-out;
+}
+
+/* Pulse Animation for New Additions */
+@keyframes pulse-green {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 102, 204, 0.7);
+    }
+
+    50% {
+        box-shadow: 0 0 0 10px rgba(0, 102, 204, 0);
+    }
+}
+
+.pulse-success {
+    animation: pulse-green 1s ease-out;
+}
+
+/* Loading Skeleton */
+.skeleton {
+    background: linear-gradient(90deg,
+            #E6F2FF 0%,
+            #FFFFFF 50%,
+            #E6F2FF 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 8px;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+/* Enhanced Button States */
+button:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+/* Focus Visible for Accessibility */
+*:focus-visible {
+    outline: 2px solid #0066CC;
+    outline-offset: 2px;
+}
+
+/* Smooth Transitions */
+* {
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+}
+
+/* Prevent transition on page load */
+.preload * {
+    transition: none !important;
+}
+
+/* Charts */
+/* Since Chart.js uses canvas, we need to configure global defaults in JS to match dark mode */

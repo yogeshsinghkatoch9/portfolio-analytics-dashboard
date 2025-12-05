@@ -1,0 +1,16 @@
+{
+  "name": "portfolio-analytics-dashboard-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "live-server frontend --port=5173 --open=frontend/index.html --no-browser",
+    "start:open": "live-server frontend --port=5173 --open=frontend/index.html",
+    "install:live": "npm install live-server --no-audit --no-fund",
+    "test:e2e": "npx playwright test --project=chromium",
+    "install:playwright": "npx playwright install --with-deps"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2",
+    "@playwright/test": "^1.40.0"
+  }
+}

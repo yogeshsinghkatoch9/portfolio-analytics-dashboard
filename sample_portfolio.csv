@@ -1,0 +1,11 @@
+Symbol,Quantity,Price,Description,Cost
+AAPL,100,180.50,Apple Inc.,18050
+MSFT,50,420.25,Microsoft Corporation,21012.50
+GOOGL,30,140.00,Alphabet Inc.,4200
+AMZN,25,190.00,Amazon Inc.,4750
+TSLA,15,250.00,Tesla Inc.,3750
+META,20,320.00,Meta Platforms,6400
+NFLX,10,450.00,Netflix Inc.,4500
+NVDA,12,875.50,NVIDIA Corporation,10506
+JNJ,35,160.00,Johnson & Johnson,5600
+PG,20,150.00,Procter & Gamble,3000
