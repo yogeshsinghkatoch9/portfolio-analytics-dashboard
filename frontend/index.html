@@ -2811,22 +2811,28 @@
                 btn.disabled = true;
 
                 try {
+                    console.log('Starting portfolio simulation with holdings:', builderHoldings);
                     const response = await fetch(`${API_URL}/api/portfolio/simulate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ holdings: builderHoldings })
                     });
 
+                    console.log('Simulation response status:', response.status);
                     const data = await response.json();
+                    console.log('Simulation response data:', data);
 
                     if (data.success) {
+                        console.log('Rendering simulation results...');
                         renderSimulationResults(data.proposed);
+                        Toast.success('Portfolio analysis complete!');
                     } else {
-                        alert('Simulation failed: ' + data.error);
+                        console.error('Simulation failed:', data.error);
+                        Toast.error('Simulation failed: ' + data.error);
                     }
                 } catch (error) {
                     console.error('Simulation error:', error);
-                    alert('Error running simulation');
+                    Toast.error('Error running simulation: ' + error.message);
                 } finally {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
