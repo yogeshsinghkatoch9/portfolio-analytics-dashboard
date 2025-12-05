@@ -1,0 +1,5 @@
+# Ignore Python detection files to force Dockerfile usage
+runtime.txt
+.python-version
+*.pyc
+__pycache__
