@@ -7,14 +7,19 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Database URL - use environment variable or default to local PostgreSQL
+# Database URL - use SQLite for simplicity (no external DB required)
+# For production with PostgreSQL, set DATABASE_URL environment variable
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/visionwealth"
+    "sqlite:///./portfolio.db"  # SQLite database file
 )
 
-# Create SQLAlch engine
-engine = create_engine(DATABASE_URL)
+# Create SQLAlchemy engine
+# Add connect_args for SQLite to handle threading
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
