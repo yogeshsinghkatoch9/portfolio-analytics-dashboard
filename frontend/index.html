@@ -2850,17 +2850,59 @@
                 document.getElementById('previewRisk').textContent = (vol * 100).toFixed(2) + '%';
 
                 // Yield
-                const yieldVal = data.analytics.advanced_risk?.dividend_metrics?.average_yield || 0; // Wait, advanced_risk doesn't have dividend. It's in analytics.dividend_metrics
-                // We need to check structure. simulate returns { proposed: { analytics: { risk_metrics, advanced_risk } } }
-                // Wait, main.py simulate returns:
-                // 'analytics': { 'risk_metrics': risk, 'advanced_risk': advanced_risk }
-                // It seems I missed dividend_metrics in simulate endpoint.
-                // I should update main.py to include dividend metrics in simulate response.
-                // For now, I'll use a placeholder or 0.
-                document.getElementById('previewYield').textContent = '-';
+                const yieldVal = data.analytics.advanced_risk?.dividend_metrics?.average_yield || 0;
+                document.getElementById('previewYield').textContent = data.summary.avg_yield ? data.summary.avg_yield + '%' : '-';
 
                 // Charts
                 renderBuilderCharts(data);
+
+                // Risk Stats
+                renderRiskStats(data);
+            }
+
+            function renderRiskStats(data) {
+                const riskContainer = document.getElementById('builderRiskStats');
+                const risk = data.analytics.risk_metrics;
+                const advRisk = data.analytics.advanced_risk;
+
+                let riskHTML = '<div class="grid grid-cols-2 gap-4">';
+
+                // Volatility
+                riskHTML += `
+                    <div class="bg-blue-50 rounded-lg p-3">
+                        <div class="text-xs text-blue-600 font-medium mb-1">Portfolio Volatility</div>
+                        <div class="text-xl font-bold text-blue-900">${risk.portfolio_volatility || 0}%</div>
+                    </div>
+                `;
+
+                // Value at Risk (95%)
+                riskHTML += `
+                    <div class="bg-red-50 rounded-lg p-3">
+                        <div class="text-xs text-red-600 font-medium mb-1">Value at Risk (95%)</div>
+                        <div class="text-xl font-bold text-red-900">$${(risk.value_at_risk_95 || 0).toLocaleString()}</div>
+                    </div>
+                `;
+
+                // Sharpe Ratio (if available from advanced risk)
+                if (advRisk && advRisk.metrics) {
+                    riskHTML += `
+                        <div class="bg-green-50 rounded-lg p-3">
+                            <div class="text-xs text-green-600 font-medium mb-1">Sharpe Ratio</div>
+                            <div class="text-xl font-bold text-green-900">${(advRisk.metrics.sharpe || 0).toFixed(2)}</div>
+                        </div>
+                    `;
+
+                    // Beta
+                    riskHTML += `
+                        <div class="bg-purple-50 rounded-lg p-3">
+                            <div class="text-xs text-purple-600 font-medium mb-1">Beta (vs S&P 500)</div>
+                            <div class="text-xl font-bold text-purple-900">${(advRisk.metrics.beta || 0).toFixed(2)}</div>
+                        </div>
+                    `;
+                }
+
+                riskHTML += '</div>';
+                riskContainer.innerHTML = riskHTML;
             }
 
             function renderBuilderCharts(data) {
