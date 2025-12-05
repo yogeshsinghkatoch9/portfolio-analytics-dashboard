@@ -563,6 +563,7 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
                     'Total Return (%)': 0,  # Default - would need history
                     'Sector': 'Technology',  # Default - would need full info
                     'Asset Type': 'Stock',   # Default
+                    'Asset Category': 'Equity',  # Default
                     'Est Annual Income ($)': 0,  # Default - would need full info
                     'NFS G/L ($)': 0,
                     'Principal ($)*': value,  # Assume cost basis = current value
@@ -587,6 +588,7 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
                     'Total Return (%)': 0,
                     'Sector': 'Unknown',
                     'Asset Type': 'Stock',
+                    'Asset Category': 'Equity',
                     'Est Annual Income ($)': 0,
                     'NFS G/L ($)': 0,
                     'Principal ($)*': value,
