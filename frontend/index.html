@@ -2794,11 +2794,17 @@
             let builderHoldings = [];
             let builderCharts = {};
 
-            // Initialize
-            document.addEventListener('DOMContentLoaded', () => {
+            // Initialize - handle case where script loads after DOMContentLoaded
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    setupTabs();
+                    setupBuilder();
+                });
+            } else {
+                // DOM already loaded, call immediately
                 setupTabs();
                 setupBuilder();
-            });
+            }
 
             function setupBuilder() {
                 const searchInput = document.getElementById('assetSearch');
