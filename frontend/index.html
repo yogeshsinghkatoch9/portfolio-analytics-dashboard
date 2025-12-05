@@ -3262,9 +3262,14 @@
             }
 
             function setupTabs() {
-                const tabs = document.querySelectorAll('.tab-button'); // Updated selector
+                console.log('Setting up tabs...');
+                const tabs = document.querySelectorAll('.tab-button');
+                console.log('Found tabs:', tabs.length);
+
                 tabs.forEach(tab => {
                     tab.addEventListener('click', () => {
+                        console.log('Tab clicked:', tab.dataset.tab);
+
                         // Remove active class from all tabs
                         tabs.forEach(t => {
                             t.classList.remove('text-blue-600', 'border-blue-600');
@@ -3280,7 +3285,15 @@
 
                         // Show target content
                         const targetId = tab.dataset.tab + '-tab';
-                        document.getElementById(targetId).classList.remove('hidden');
+                        const targetElement = document.getElementById(targetId);
+                        console.log('Target ID:', targetId, 'Element:', targetElement);
+
+                        if (targetElement) {
+                            targetElement.classList.remove('hidden');
+                            console.log('Showed tab:', targetId);
+                        } else {
+                            console.error('Tab content not found:', targetId);
+                        }
                     });
                 });
             }
