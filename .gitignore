@@ -53,3 +53,4 @@ test-results/
 
 # Generated files
 *.pdf
+push_to_github.sh
