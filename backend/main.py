@@ -522,14 +522,7 @@ def prepare_holdings_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return holdings.to_dict('records')
 
 
-@app.get("/")
-async def root():
-    """API health check"""
-    return {
-        "status": "online",
-        "service": "Portfolio Analytics API",
-        "version": "1.0.0"
-    }
+# Removed duplicate "/" route - already defined above near line 212
 
 
 @app.post("/upload-portfolio")
