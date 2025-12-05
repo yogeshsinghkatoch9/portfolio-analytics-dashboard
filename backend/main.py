@@ -52,7 +52,11 @@ CACHE_TTL = 300  # 5 minutes in seconds
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://portfolio-analytics-dashboard-seven.vercel.app",
+        "https://portfolio-analytics-dashboard-fqbxmihus.vercel.app",
+        "http://localhost:8000",  # Keep for local development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
