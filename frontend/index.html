@@ -1309,11 +1309,11 @@
 
 
                     // Hide upload, show dashboard
-                    uploadStatus.classList.add('hidden');
-                    uploadSection.classList.add('hidden');
-                    dashboardSection.classList.remove('hidden');
-                    uploadNewBtn.classList.remove('hidden');
-                    exportPdfBtn.classList.remove('hidden');  // Show PDF export button
+                    if (uploadStatus) uploadStatus.classList.add('hidden');
+                    if (uploadSection) uploadSection.classList.add('hidden');
+                    if (dashboardSection) dashboardSection.classList.remove('hidden');
+                    if (uploadNewBtn) uploadNewBtn.classList.remove('hidden');
+                    if (exportPdfBtn) exportPdfBtn.classList.remove('hidden');  // Show PDF export button
 
                     // Show success message
                     const holdingsCount = data.holdings?.length || portfolioData.holdings?.length || 0;
