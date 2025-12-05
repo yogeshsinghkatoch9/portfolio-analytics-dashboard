@@ -423,12 +423,11 @@ def generate_pdf_from_upload(file_content: bytes, filename: str, output_path: st
     """
     # Import portfolio processing functions
     # Import helper functions from backend.main using full package path
-    from backend.main import parse_portfolio_file, clean_portfolio_data, compute_summary_metrics, generate_chart_data, prepare_holdings_table
+    from .main import parse_portfolio_file, clean_portfolio_data, compute_summary_metrics, generate_chart_data, prepare_holdings_table
     # Use package import to resolve backend analytics module
-    from backend import analytics
-    
-    # Try to parse the uploaded file using the flexible importer (supports many formats)
-    from backend import data_import
+    import analytics
+    import market_data
+    import data_import
 
     importer = data_import.PortfolioImporter()
     import_result = importer.import_file(file_content, filename)

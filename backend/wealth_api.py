@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from backend import db
+import db
 from typing import Dict, List, Any
 from pydantic import BaseModel
 
