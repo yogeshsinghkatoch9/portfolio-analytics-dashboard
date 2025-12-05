@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - VisionWealth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .animated-bg {
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+
+        @keyframes gradient {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+    </style>
+</head>
+
+<body class="h-screen w-full flex items-center justify-center animated-bg">
+
+    <div class="glass-panel p-8 rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div class="text-center mb-8">
+            <div class="flex items-center justify-center mb-4">
+                <div
+                    class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                    V
+                </div>
+            </div>
+            <h1 class="text-3xl font-bold text-gray-800">VisionWealth</h1>
+            <p class="text-gray-500 mt-2">Portfolio Intelligence Dashboard</p>
+        </div>
+
+        <form id="loginForm" class="space-y-6">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-envelope text-gray-400"></i>
+                    </div>
+                    <input type="email" id="email" required
+                        class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="you@example.com">
+                </div>
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-lock text-gray-400"></i>
+                    </div>
+                    <input type="password" id="password" required
+                        class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="••••••••">
+                </div>
+                <div class="flex justify-end mt-1">
+                    <a href="#" class="text-sm text-blue-600 hover:text-blue-800">Forgot password?</a>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="hidden bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center">
+                <i class="fas fa-exclamation-circle mr-2"></i>
+                <span id="errorText"></span>
+            </div>
+
+            <button type="submit" id="loginBtn"
+                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all transform hover:scale-[1.02]">
+                Sign In
+            </button>
+        </form>
+
+        <div class="mt-6 text-center">
+            <p class="text-sm text-gray-600">
+                Don't have an account?
+                <a href="register.html" class="font-medium text-blue-600 hover:text-blue-500">Create one now</a>
+            </p>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-gray-200 text-center text-xs text-gray-400">
+            &copy; 2025 VisionWealth. Enterprise Grade Security.
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+        // Initialize auth check
+        Auth.init();
+
+        const loginForm = document.getElementById('loginForm');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        const loginBtn = document.getElementById('loginBtn');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            // Show loading state
+            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Signing In...';
+            loginBtn.disabled = true;
+            errorMessage.classList.add('hidden');
+
+            const result = await Auth.login(email, password);
+
+            if (result.success) {
+                window.location.href = 'index.html';
+            } else {
+                errorText.textContent = result.error;
+                errorMessage.classList.remove('hidden');
+                loginBtn.innerHTML = 'Sign In';
+                loginBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
