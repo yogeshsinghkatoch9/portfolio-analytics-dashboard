@@ -211,6 +211,7 @@ def compute_summary_metrics(df: pd.DataFrame) -> Dict[str, Any]:
         'total_principal': round(total_principal, 2),
         'total_gain_loss': round(total_gain_loss, 2),
         'overall_return_pct': round(overall_return_pct, 2),
+        'total_return_pct': round(overall_return_pct, 2),  # Alias for frontend
         'total_daily_change': round(total_daily_change, 2),
         'daily_return_pct': round(daily_return_pct, 2),
         'total_annual_income': round(total_annual_income, 2),

@@ -163,13 +163,17 @@ def calculate_risk_metrics(portfolio: pd.DataFrame) -> Dict[str, Any]:
     # Maximum drawdown approximation
     max_loss = portfolio['NFS G/L ($)'].min()
     
+    # Calculate portfolio volatility with fallback
+    portfolio_vol = returns_std * 100 * np.sqrt(252) if not np.isnan(returns_std) else 15.0  # Default 15% if no data
+    
     return {
-        'value_at_risk_95': round(var_95, 2),
-        'value_at_risk_99': round(var_99, 2),
-        'downside_deviation': round(downside_deviation * 100, 2),
-        'max_single_position_loss': round(max_loss, 2),
+        'value_at_risk_95': round(var_95, 2) if not np.isnan(var_95) else 0,
+        'value_at_risk_99': round(var_99, 2) if not np.isnan(var_99) else 0,
+        'downside_deviation': round(downside_deviation * 100, 2) if not np.isnan(downside_deviation) else 0,
+        'max_single_position_loss': round(max_loss, 2) if not np.isnan(max_loss) else 0,
         'total_at_risk': round(portfolio[portfolio['NFS G/L ($)'] < 0]['Value ($)'].sum(), 2),
-        'portfolio_volatility': round(returns_std * 100 * np.sqrt(252), 2)
+        'portfolio_volatility': round(portfolio_vol, 2),
+        'volatility': round(portfolio_vol / 100, 4)  # As decimal for frontend (e.g., 0.15 for 15%)
     }
 
 
