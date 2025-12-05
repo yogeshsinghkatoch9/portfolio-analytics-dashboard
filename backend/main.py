@@ -16,15 +16,15 @@ import io
 import json
 import yfinance as yf
 from functools import lru_cache
-from backend import analytics
-from backend import data_import
-from backend import market_data
-from backend import db as db_module
-from backend import portfolio_api
-from backend import wealth_api
-from backend import watchlist_api
-from backend import news_api
-from backend import ai_api
+import analytics
+import data_import
+import market_data
+import db as db_module
+import portfolio_api
+import wealth_api
+import watchlist_api
+import news_api
+import ai_api
 import os
 
 app = FastAPI(title="Portfolio Analytics API", version="2.0.0")
@@ -597,7 +597,7 @@ async def export_portfolio_pdf(
     Generate and download professional PDF portfolio report
     """
     try:
-        from backend import pdf_generator
+        import pdf_generator
         import tempfile
         from fastapi.responses import FileResponse
         
