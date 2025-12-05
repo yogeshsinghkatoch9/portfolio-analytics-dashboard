@@ -926,45 +926,49 @@
             });
 
             function setupEventListeners() {
-                // File upload
-                dropArea.addEventListener('click', () => fileInput.click());
-                fileInput.addEventListener('change', handleFileSelect);
+                // File upload - only if elements exist
+                if (dropArea && fileInput) {
+                    dropArea.addEventListener('click', () => fileInput.click());
+                    fileInput.addEventListener('change', handleFileSelect);
 
-                // Drag and drop
-                dropArea.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    dropArea.classList.add('dragover');
-                });
+                    // Drag and drop
+                    dropArea.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        dropArea.classList.add('dragover');
+                    });
 
-                dropArea.addEventListener('dragleave', () => {
-                    dropArea.classList.remove('dragover');
-                });
+                    dropArea.addEventListener('dragleave', () => {
+                        dropArea.classList.remove('dragover');
+                    });
 
-                dropArea.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    dropArea.classList.remove('dragover');
-                    const file = e.dataTransfer.files[0];
-                    if (file) {
-                        uploadFile(file);
-                    }
-                });
+                    dropArea.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        dropArea.classList.remove('dragover');
+                        const file = e.dataTransfer.files[0];
+                        if (file) {
+                            uploadFile(file);
+                        }
+                    });
+                }
 
                 // Upload new file
-                uploadNewBtn.addEventListener('click', () => {
-                    dashboardSection.classList.add('hidden');
-                    uploadSection.classList.remove('hidden');
-                    uploadNewBtn.classList.add('hidden');
-                    fileInput.value = '';
-                });
+                if (uploadNewBtn && dashboardSection && uploadSection) {
+                    uploadNewBtn.addEventListener('click', () => {
+                        dashboardSection.classList.add('hidden');
+                        uploadSection.classList.remove('hidden');
+                        uploadNewBtn.classList.add('hidden');
+                        if (fileInput) fileInput.value = '';
+                    });
+                }
 
                 // Search
-                searchInput.addEventListener('input', filterTable);
+                if (searchInput) searchInput.addEventListener('input', filterTable);
 
                 // Export to PDF
-                exportPdfBtn.addEventListener('click', exportToPDF);
+                if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportToPDF);
 
                 // Export
-                exportBtn.addEventListener('click', exportToCSV);
+                if (exportBtn) exportBtn.addEventListener('click', exportToCSV);
                 if (refreshPricesBtn) refreshPricesBtn.addEventListener('click', refreshLivePrices);
                 if (autoRefreshToggle) autoRefreshToggle.addEventListener('change', (e) => {
                     if (e.target.checked) startAutoRefresh(); else stopAutoRefresh();
