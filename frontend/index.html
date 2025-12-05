@@ -1569,50 +1569,38 @@
                                 borderWidth: 0
                             }]
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { position: 'right', labels: { boxWidth: 10 } },
-                                tooltip: {
-                                    callbacks: {
-                                        label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)} (${sectors[ctx.dataIndex].percent}%)`
-                                    }
-                                }
-                            },
-                            cutout: '70%'
-                        }
+                    }
                     });
 
-                    // Populate Sector Table (Dashboard)
-                    const tbody = document.getElementById('sectorTable');
-                    if (tbody) {
-                        tbody.innerHTML = sectors.slice(0, 5).map(s => `
+                // Populate Sector Table (Dashboard)
+                const tbody = document.getElementById('sectorTable');
+                if (tbody) {
+                    tbody.innerHTML = sectors.slice(0, 5).map(s => `
                             <tr class="border-b border-gray-50 last:border-0">
                                 <td class="px-4 py-2 font-medium text-gray-800">${s.sector}</td>
                                 <td class="px-4 py-2 text-gray-600">${formatCurrency(s.value)}</td>
                                 <td class="px-4 py-2 text-gray-600">${s.percent}%</td>
                             </tr>
                         `).join('');
-                    }
                 }
+            }
 
-                // 2. Risk Metrics (Dashboard Card)
-                if (analytics.advanced_risk && analytics.advanced_risk.metrics) {
-                    const m = analytics.advanced_risk.metrics;
-                    const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+            // 2. Risk Metrics (Dashboard Card)
+            if (analytics.advanced_risk && analytics.advanced_risk.metrics) {
+                const m = analytics.advanced_risk.metrics;
+                const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
 
-                    setTxt('metricBeta', m.beta);
-                    setTxt('metricSharpe', m.sharpe);
-                    setTxt('metricVol', m.volatility + '%');
+                setTxt('metricBeta', m.beta);
+                setTxt('metricSharpe', m.sharpe);
+                setTxt('metricVol', m.volatility + '%');
 
-                    const bar = document.getElementById('barBeta');
-                    if (bar) {
-                        const pct = Math.min((m.beta / 2) * 100, 100);
-                        bar.style.width = pct + '%';
-                        bar.className = `h-1.5 rounded-full ${m.beta > 1.2 ? 'bg-red-500' : (m.beta < 0.8 ? 'bg-green-500' : 'bg-yellow-500')}`;
-                    }
+                const bar = document.getElementById('barBeta');
+                if (bar) {
+                    const pct = Math.min((m.beta / 2) * 100, 100);
+                    bar.style.width = pct + '%';
+                    bar.className = `h-1.5 rounded-full ${m.beta > 1.2 ? 'bg-red-500' : (m.beta < 0.8 ? 'bg-green-500' : 'bg-yellow-500')}`;
                 }
+            }
             }
 
             async function fetchSavedPortfolioAnalytics(id) {
