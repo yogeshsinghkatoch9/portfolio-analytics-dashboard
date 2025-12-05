@@ -1434,7 +1434,7 @@
 
                     // Generate and display portfolio analysis text
                     console.log('[DEBUG] Generating portfolio analysis...');
-                    displayPortfolioAnalysis(data);
+                    generateAIAnalysis(data);
 
                     // Render charts
                     console.log('[DEBUG] Rendering charts...');
@@ -1682,6 +1682,97 @@
                         }
                     }
                 });
+            }
+
+            async function generateAIAnalysis(data) {
+                const analysisContainer = document.getElementById('aiAnalysisText');
+                if (!analysisContainer) return;
+
+                // Show loading state
+                analysisContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                        <p class="text-gray-500">VisionWealth AI is analyzing your portfolio...</p>
+                    </div>
+                `;
+
+                try {
+                    // Prepare context for AI
+                    const context = {
+                        total_value: data.summary.total_value,
+                        daily_change_pct: data.summary.daily_return_pct,
+                        holdings: data.holdings.map(h => ({
+                            ticker: h.Symbol,
+                            value: h['Value ($)'],
+                            allocation: h['Assets (%)'],
+                            sector: h['Sector'] || 'Unknown'
+                        }))
+                    };
+
+                    const response = await fetch(`${API_URL}/api/v2/ai/analyze`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(Auth.token ? { 'Authorization': `Bearer ${Auth.token}` } : {})
+                        },
+                        body: JSON.stringify({
+                            portfolio_context: context,
+                            query: "Analyze my portfolio structure and risk."
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('AI Analysis failed');
+
+                    const analysis = await response.json();
+
+                    // Render Analysis
+                    let sentimentColor = 'text-gray-600';
+                    if (analysis.sentiment === 'Bullish') sentimentColor = 'text-green-600';
+                    if (analysis.sentiment === 'Bearish') sentimentColor = 'text-red-600';
+
+                    analysisContainer.innerHTML = `
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between border-b pb-2">
+                                <span class="text-sm font-medium text-gray-500">Market Sentiment</span>
+                                <span class="font-bold ${sentimentColor}">${analysis.sentiment}</span>
+                            </div>
+                            
+                            <div>
+                                <h4 class="font-semibold text-gray-800 mb-1">Executive Summary</h4>
+                                <p class="text-gray-600 text-sm leading-relaxed">${analysis.summary}</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div class="bg-red-50 p-3 rounded-lg border border-red-100">
+                                    <h5 class="text-red-700 font-medium text-sm mb-2 flex items-center">
+                                        <i class="fas fa-exclamation-triangle mr-2"></i> Risk Factors
+                                    </h5>
+                                    <ul class="list-disc list-inside text-xs text-red-600 space-y-1">
+                                        ${analysis.risks.map(risk => `<li>${risk}</li>`).join('')}
+                                    </ul>
+                                </div>
+                                
+                                <div class="bg-green-50 p-3 rounded-lg border border-green-100">
+                                    <h5 class="text-green-700 font-medium text-sm mb-2 flex items-center">
+                                        <i class="fas fa-lightbulb mr-2"></i> Opportunities
+                                    </h5>
+                                    <ul class="list-disc list-inside text-xs text-green-600 space-y-1">
+                                        ${analysis.opportunities.map(opp => `<li>${opp}</li>`).join('')}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                } catch (error) {
+                    console.error('AI Analysis Error:', error);
+                    analysisContainer.innerHTML = `
+                        <div class="text-center py-4 text-red-500">
+                            <p>Unable to generate AI analysis at this moment.</p>
+                            <button onclick="generateAIAnalysis(portfolioData)" class="mt-2 text-sm text-blue-600 hover:underline">Try Again</button>
+                        </div>
+                    `;
+                }
             }
 
             function renderBenchmarkChart(data) {
