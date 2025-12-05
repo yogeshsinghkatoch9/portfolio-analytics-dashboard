@@ -318,6 +318,7 @@ async def upload_portfolio(file: UploadFile = File(...)):
     """
     Upload and process portfolio CSV/Excel file
     Returns summary metrics, chart data, and holdings table
+    OPTIMIZED: Skips heavy analytics for large portfolios with complete data
     """
     
     try:
@@ -334,26 +335,39 @@ async def upload_portfolio(file: UploadFile = File(...)):
         if len(df) == 0:
             raise HTTPException(status_code=400, detail="No valid holdings found in file")
         
-        # Compute metrics
+        # Check if we should use fast mode (large portfolio with complete data)
+        use_fast_mode = len(df) > 50 and 'Total Return (%)' in df.columns
+        
+        if use_fast_mode:
+            print(f"Using fast mode for {len(df)} holdings")
+        
+        # Compute metrics (fast mode skips heavy calculations)
         summary = compute_summary_metrics(df)
         
-        # Generate chart data
-        charts = generate_chart_data(df)
+        # Generate chart data (simplified for large portfolios)
+        charts = generate_chart_data(df, fast_mode=use_fast_mode)
         
         # Prepare holdings table
         holdings = prepare_holdings_table(df)
         
-        return JSONResponse({
+        # Convert numpy types to Python native types
+        response_data = {
             "success": True,
             "filename": file.filename,
             "summary": summary,
             "charts": charts,
             "holdings": holdings
-        })
+        }
+        
+        response_data = convert_numpy_types(response_data)
+        
+        return JSONResponse(response_data)
     
     except HTTPException as he:
         raise he
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 
