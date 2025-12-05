@@ -1772,13 +1772,25 @@
             }
 
             function updateSummaryCards(summary) {
+                console.log('[DEBUG] updateSummaryCards called with:', summary);
+
+                // Add defensive checks
+                if (!summary) {
+                    console.error('[ERROR] Summary data is undefined!');
+                    return;
+                }
+
                 // Total Value
-                document.getElementById('totalValue').textContent = formatCurrency(summary.total_value);
+                const totalValueEl = document.getElementById('totalValue');
+                if (totalValueEl) {
+                    totalValueEl.textContent = formatCurrency(summary.total_value || 0);
+                }
 
                 const dailyChangeEl = document.getElementById('dailyChange');
-                const changeClass = summary.total_daily_change >= 0 ? 'positive' : 'negative';
-                const changeIcon = summary.total_daily_change >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
-                dailyChangeEl.innerHTML = `
+                if (dailyChangeEl) {
+                    const changeClass = (summary.total_daily_change || 0) >= 0 ? 'positive' : 'negative';
+                    const changeIcon = (summary.total_daily_change || 0) >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                    dailyChangeEl.innerHTML = `
                 <span class="text-gray-600 mr-2">Today:</span>
                 <span class="${changeClass} font-semibold">
                     ${formatCurrency(summary.total_daily_change)}
@@ -1787,167 +1799,167 @@
                 <i class="fas ${changeIcon} ${changeClass} ml-1"></i>
             `;
 
-                // Gain/Loss
-                const glEl = document.getElementById('totalGainLoss');
-                const glClass = summary.total_gain_loss >= 0 ? 'positive' : 'negative';
-                glEl.textContent = formatCurrency(summary.total_gain_loss);
-                glEl.className = `text-3xl font-bold ${glClass}`;
+                    // Gain/Loss
+                    const glEl = document.getElementById('totalGainLoss');
+                    const glClass = summary.total_gain_loss >= 0 ? 'positive' : 'negative';
+                    glEl.textContent = formatCurrency(summary.total_gain_loss);
+                    glEl.className = `text-3xl font-bold ${glClass}`;
 
-                const returnEl = document.getElementById('returnPct');
-                returnEl.innerHTML = `
+                    const returnEl = document.getElementById('returnPct');
+                    returnEl.innerHTML = `
                 <span class="text-gray-600 mr-2">Return:</span>
                 <span class="${glClass} font-semibold">${summary.overall_return_pct.toFixed(2)}%</span>
             `;
 
-                // Annual Income
-                document.getElementById('annualIncome').textContent = formatCurrency(summary.total_annual_income);
-                document.getElementById('avgYield').innerHTML = `
+                    // Annual Income
+                    document.getElementById('annualIncome').textContent = formatCurrency(summary.total_annual_income);
+                    document.getElementById('avgYield').innerHTML = `
                 <span class="text-gray-600 mr-2">Avg Yield:</span>
                 <span class="font-semibold">${summary.avg_yield.toFixed(2)}%</span>
             `;
 
-                // Holdings
-                document.getElementById('holdingsCount').textContent = summary.num_holdings;
-                document.getElementById('principalAmount').textContent = `Principal: ${formatCurrency(summary.total_principal)}`;
-            }
+                    // Holdings
+                    document.getElementById('holdingsCount').textContent = summary.num_holdings;
+                    document.getElementById('principalAmount').textContent = `Principal: ${formatCurrency(summary.total_principal)}`;
+                }
 
-            function renderCharts(chartData) {
-                // Destroy existing charts
-                Object.values(charts).forEach(chart => chart.destroy());
-                charts = {};
+                function renderCharts(chartData) {
+                    // Destroy existing charts
+                    Object.values(charts).forEach(chart => chart.destroy());
+                    charts = {};
 
-                // 1. Portfolio Allocation Pie Chart
-                const allocCtx = document.getElementById('allocationChart').getContext('2d');
-                charts.allocation = new Chart(allocCtx, {
-                    type: 'pie',
-                    data: {
-                        labels: chartData.allocation_by_symbol.map(d => d.Symbol),
-                        datasets: [{
-                            data: chartData.allocation_by_symbol.map(d => d['Value ($)']),
-                            backgroundColor: generateColors(chartData.allocation_by_symbol.length)
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right' },
-                            tooltip: {
-                                callbacks: {
-                                    label: (context) => {
-                                        const label = context.label || '';
-                                        const value = formatCurrency(context.parsed);
-                                        const pct = chartData.allocation_by_symbol[context.dataIndex]['Assets (%)'].toFixed(2);
-                                        return `${label}: ${value} (${pct}%)`;
+                    // 1. Portfolio Allocation Pie Chart
+                    const allocCtx = document.getElementById('allocationChart').getContext('2d');
+                    charts.allocation = new Chart(allocCtx, {
+                        type: 'pie',
+                        data: {
+                            labels: chartData.allocation_by_symbol.map(d => d.Symbol),
+                            datasets: [{
+                                data: chartData.allocation_by_symbol.map(d => d['Value ($)']),
+                                backgroundColor: generateColors(chartData.allocation_by_symbol.length)
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'right' },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (context) => {
+                                            const label = context.label || '';
+                                            const value = formatCurrency(context.parsed);
+                                            const pct = chartData.allocation_by_symbol[context.dataIndex]['Assets (%)'].toFixed(2);
+                                            return `${label}: ${value} (${pct}%)`;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                });
+                    });
 
-                // 2. Asset Type Distribution
-                const typeCtx = document.getElementById('assetTypeChart').getContext('2d');
-                charts.assetType = new Chart(typeCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: chartData.allocation_by_type.map(d => d['Asset Type']),
-                        datasets: [{
-                            data: chartData.allocation_by_type.map(d => d['Value ($)']),
-                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right' }
-                        }
-                    }
-                });
-
-                // 3. Gain/Loss Bar Chart
-                const glCtx = document.getElementById('gainLossChart').getContext('2d');
-                const glData = chartData.gain_loss_by_symbol;
-                charts.gainLoss = new Chart(glCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: glData.map(d => d.Symbol),
-                        datasets: [{
-                            label: 'Gain/Loss ($)',
-                            data: glData.map(d => d['NFS G/L ($)']),
-                            backgroundColor: glData.map(d => d['NFS G/L ($)'] >= 0 ? '#10b981' : '#ef4444')
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: {
-                            legend: { display: false }
+                    // 2. Asset Type Distribution
+                    const typeCtx = document.getElementById('assetTypeChart').getContext('2d');
+                    charts.assetType = new Chart(typeCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: chartData.allocation_by_type.map(d => d['Asset Type']),
+                            datasets: [{
+                                data: chartData.allocation_by_type.map(d => d['Value ($)']),
+                                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                            }]
                         },
-                        scales: {
-                            x: {
-                                ticks: {
-                                    callback: (value) => formatCurrency(value)
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'right' }
+                            }
+                        }
+                    });
+
+                    // 3. Gain/Loss Bar Chart
+                    const glCtx = document.getElementById('gainLossChart').getContext('2d');
+                    const glData = chartData.gain_loss_by_symbol;
+                    charts.gainLoss = new Chart(glCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: glData.map(d => d.Symbol),
+                            datasets: [{
+                                label: 'Gain/Loss ($)',
+                                data: glData.map(d => d['NFS G/L ($)']),
+                                backgroundColor: glData.map(d => d['NFS G/L ($)'] >= 0 ? '#10b981' : '#ef4444')
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        callback: (value) => formatCurrency(value)
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
 
-                // 4. Daily Movement Bar Chart
-                const dmCtx = document.getElementById('dailyMovementChart').getContext('2d');
-                const dmData = chartData.daily_movement;
-                charts.dailyMovement = new Chart(dmCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: dmData.map(d => d.Symbol),
-                        datasets: [{
-                            label: 'Daily Change ($)',
-                            data: dmData.map(d => d['1-Day Value Change ($)']),
-                            backgroundColor: dmData.map(d => d['1-Day Value Change ($)'] >= 0 ? '#10b981' : '#ef4444')
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: {
-                            legend: { display: false }
+                    // 4. Daily Movement Bar Chart
+                    const dmCtx = document.getElementById('dailyMovementChart').getContext('2d');
+                    const dmData = chartData.daily_movement;
+                    charts.dailyMovement = new Chart(dmCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: dmData.map(d => d.Symbol),
+                            datasets: [{
+                                label: 'Daily Change ($)',
+                                data: dmData.map(d => d['1-Day Value Change ($)']),
+                                backgroundColor: dmData.map(d => d['1-Day Value Change ($)'] >= 0 ? '#10b981' : '#ef4444')
+                            }]
                         },
-                        scales: {
-                            x: {
-                                ticks: {
-                                    callback: (value) => formatCurrency(value)
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        callback: (value) => formatCurrency(value)
+                                    }
                                 }
                             }
                         }
-                    }
-                });
-            }
+                    });
+                }
 
-            function renderHoldingsTable(holdings) {
-                const tbody = document.getElementById('holdingsTableBody');
-                tbody.innerHTML = '';
+                function renderHoldingsTable(holdings) {
+                    const tbody = document.getElementById('holdingsTableBody');
+                    tbody.innerHTML = '';
 
-                holdings.forEach(holding => {
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-gray-50';
+                    holdings.forEach(holding => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
 
-                    // Handle both old and new column names
-                    const symbol = holding.Symbol || holding.ticker || '';
-                    const description = holding.Description || holding.description || '';
-                    const quantity = holding.Quantity || holding.quantity || 0;
-                    const price = holding['Price ($)'] || holding.price || 0;
-                    const value = holding['Value ($)'] || holding.value || 0;
-                    const gainLoss = holding['NFS G/L ($)'] || 0;
-                    const gainLossPct = holding['NFS G/L (%)'] || 0;
-                    const yieldPct = holding['Current Yld/Dist Rate (%)'] || 0;
+                        // Handle both old and new column names
+                        const symbol = holding.Symbol || holding.ticker || '';
+                        const description = holding.Description || holding.description || '';
+                        const quantity = holding.Quantity || holding.quantity || 0;
+                        const price = holding['Price ($)'] || holding.price || 0;
+                        const value = holding['Value ($)'] || holding.value || 0;
+                        const gainLoss = holding['NFS G/L ($)'] || 0;
+                        const gainLossPct = holding['NFS G/L (%)'] || 0;
+                        const yieldPct = holding['Current Yld/Dist Rate (%)'] || 0;
 
-                    const glClass = gainLoss >= 0 ? 'positive' : 'negative';
+                        const glClass = gainLoss >= 0 ? 'positive' : 'negative';
 
-                    row.innerHTML = `
+                        row.innerHTML = `
                     <td class="px-4 py-3 font-semibold text-gray-900">${symbol}</td>
                     <td class="px-4 py-3 text-gray-700">${description}</td>
                     <td class="px-4 py-3 text-right text-gray-700">${quantity.toFixed(2)}</td>
@@ -1958,130 +1970,130 @@
                     <td class="px-4 py-3 text-right text-gray-700">${yieldPct.toFixed(2)}%</td>
                 `;
 
-                    tbody.appendChild(row);
-                });
-            }
-
-            function filterTable() {
-                const searchTerm = searchInput.value.toLowerCase();
-                const rows = document.querySelectorAll('#holdingsTableBody tr');
-
-                rows.forEach(row => {
-                    const text = row.textContent.toLowerCase();
-                    row.style.display = text.includes(searchTerm) ? '' : 'none';
-                });
-            }
-
-            /* ------------------ Portfolio Save / Load ------------------ */
-            function buildSavePayload(name = 'My Portfolio') {
-                // If an imported portfolio exists, use its normalized holdings
-                if (portfolioData && Array.isArray(portfolioData.holdings) && portfolioData.holdings.length > 0) {
-                    const holdings = portfolioData.holdings.map(h => {
-                        return {
-                            ticker: (h.Symbol || h.ticker || '').toString().toUpperCase(),
-                            quantity: Number(h.Quantity || h.quantity || 0),
-                            price: Number(h['Price ($)'] || h.price || 0),
-                            cost_basis: Number(h['Principal ($)*'] || h.cost_basis || 0),
-                            metadata: { description: h.Description || h.description || '' }
-                        };
+                        tbody.appendChild(row);
                     });
-                    return { name, holdings };
                 }
 
-                // If no imported portfolio, but user built one in the Builder, convert weights -> quantities
-                if (typeof builderHoldings !== 'undefined' && builderHoldings.length > 0) {
-                    // Ask user for total portfolio value to convert weights into quantities
-                    const totalStr = prompt('Enter total portfolio value to allocate (USD):', '100000');
-                    const totalValue = Number(totalStr) || 0;
-                    if (totalValue <= 0) {
-                        alert('Invalid total value. Save cancelled.');
-                        return null;
+                function filterTable() {
+                    const searchTerm = searchInput.value.toLowerCase();
+                    const rows = document.querySelectorAll('#holdingsTableBody tr');
+
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(searchTerm) ? '' : 'none';
+                    });
+                }
+
+                /* ------------------ Portfolio Save / Load ------------------ */
+                function buildSavePayload(name = 'My Portfolio') {
+                    // If an imported portfolio exists, use its normalized holdings
+                    if (portfolioData && Array.isArray(portfolioData.holdings) && portfolioData.holdings.length > 0) {
+                        const holdings = portfolioData.holdings.map(h => {
+                            return {
+                                ticker: (h.Symbol || h.ticker || '').toString().toUpperCase(),
+                                quantity: Number(h.Quantity || h.quantity || 0),
+                                price: Number(h['Price ($)'] || h.price || 0),
+                                cost_basis: Number(h['Principal ($)*'] || h.cost_basis || 0),
+                                metadata: { description: h.Description || h.description || '' }
+                            };
+                        });
+                        return { name, holdings };
                     }
 
-                    const holdings = builderHoldings.map(h => {
-                        const weightPct = Number(h.weight) || 0;
-                        const allocationValue = (weightPct / 100) * totalValue;
-                        const price = Number(h.price) || 0.0;
-                        const quantity = price > 0 ? Math.floor(allocationValue / price) : 0;
-                        return {
-                            ticker: (h.symbol || '').toString().toUpperCase(),
-                            quantity: Number(quantity),
-                            price: Number(price),
-                            cost_basis: Number(price * quantity),
-                            metadata: { description: '' }
-                        };
-                    });
+                    // If no imported portfolio, but user built one in the Builder, convert weights -> quantities
+                    if (typeof builderHoldings !== 'undefined' && builderHoldings.length > 0) {
+                        // Ask user for total portfolio value to convert weights into quantities
+                        const totalStr = prompt('Enter total portfolio value to allocate (USD):', '100000');
+                        const totalValue = Number(totalStr) || 0;
+                        if (totalValue <= 0) {
+                            alert('Invalid total value. Save cancelled.');
+                            return null;
+                        }
 
-                    return { name, holdings };
-                }
+                        const holdings = builderHoldings.map(h => {
+                            const weightPct = Number(h.weight) || 0;
+                            const allocationValue = (weightPct / 100) * totalValue;
+                            const price = Number(h.price) || 0.0;
+                            const quantity = price > 0 ? Math.floor(allocationValue / price) : 0;
+                            return {
+                                ticker: (h.symbol || '').toString().toUpperCase(),
+                                quantity: Number(quantity),
+                                price: Number(price),
+                                cost_basis: Number(price * quantity),
+                                metadata: { description: '' }
+                            };
+                        });
 
-                return null;
-            }
-
-            async function savePortfolio() {
-                if (!portfolioData) {
-                    alert('No portfolio loaded to save. Upload or build a portfolio first.');
-                    return;
-                }
-
-                const name = prompt('Enter a name for this portfolio:', 'My Portfolio');
-                if (!name) return;
-
-                const payload = buildSavePayload(name);
-
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    const data = await res.json();
-                    if (res.ok) {
-                        alert('Portfolio saved successfully');
-                        // Set client name input to saved portfolio name for easier exports
-                        try {
-                            const clientInput = document.getElementById('clientNameInput');
-                            if (clientInput) clientInput.value = data.name || name || '';
-                            const idEl = document.getElementById('savedPortfolioId');
-                            if (idEl) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + (data.id || '—'); }
-                        } catch (e) { }
-                    } else {
-                        alert('Failed to save portfolio: ' + (data.detail || JSON.stringify(data)));
+                        return { name, holdings };
                     }
-                } catch (err) {
-                    alert('Error saving portfolio: ' + err.message);
+
+                    return null;
                 }
-            }
 
-            function openPortfolioModal() {
-                document.getElementById('portfolioModal').classList.remove('hidden');
-                fetchAndRenderPortfolios();
-            }
-
-            function closePortfolioModalFn() {
-                document.getElementById('portfolioModal').classList.add('hidden');
-                document.getElementById('portfolioList').innerHTML = '';
-            }
-
-            async function fetchAndRenderPortfolios() {
-                const listEl = document.getElementById('portfolioList');
-                listEl.innerHTML = '<p class="text-gray-500">Loading...</p>';
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio`);
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || 'Failed to fetch portfolios');
-
-                    if (!Array.isArray(data) || data.length === 0) {
-                        listEl.innerHTML = '<p class="text-gray-500">No saved portfolios</p>';
+                async function savePortfolio() {
+                    if (!portfolioData) {
+                        alert('No portfolio loaded to save. Upload or build a portfolio first.');
                         return;
                     }
 
-                    listEl.innerHTML = '';
-                    data.forEach(p => {
-                        const item = document.createElement('div');
-                        item.className = 'flex items-center justify-between p-2 border rounded';
-                        item.innerHTML = `
+                    const name = prompt('Enter a name for this portfolio:', 'My Portfolio');
+                    if (!name) return;
+
+                    const payload = buildSavePayload(name);
+
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const data = await res.json();
+                        if (res.ok) {
+                            alert('Portfolio saved successfully');
+                            // Set client name input to saved portfolio name for easier exports
+                            try {
+                                const clientInput = document.getElementById('clientNameInput');
+                                if (clientInput) clientInput.value = data.name || name || '';
+                                const idEl = document.getElementById('savedPortfolioId');
+                                if (idEl) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + (data.id || '—'); }
+                            } catch (e) { }
+                        } else {
+                            alert('Failed to save portfolio: ' + (data.detail || JSON.stringify(data)));
+                        }
+                    } catch (err) {
+                        alert('Error saving portfolio: ' + err.message);
+                    }
+                }
+
+                function openPortfolioModal() {
+                    document.getElementById('portfolioModal').classList.remove('hidden');
+                    fetchAndRenderPortfolios();
+                }
+
+                function closePortfolioModalFn() {
+                    document.getElementById('portfolioModal').classList.add('hidden');
+                    document.getElementById('portfolioList').innerHTML = '';
+                }
+
+                async function fetchAndRenderPortfolios() {
+                    const listEl = document.getElementById('portfolioList');
+                    listEl.innerHTML = '<p class="text-gray-500">Loading...</p>';
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio`);
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.detail || 'Failed to fetch portfolios');
+
+                        if (!Array.isArray(data) || data.length === 0) {
+                            listEl.innerHTML = '<p class="text-gray-500">No saved portfolios</p>';
+                            return;
+                        }
+
+                        listEl.innerHTML = '';
+                        data.forEach(p => {
+                            const item = document.createElement('div');
+                            item.className = 'flex items-center justify-between p-2 border rounded';
+                            item.innerHTML = `
                             <div>
                                 <div class="font-medium">${p.name}</div>
                                 <div class="text-xs text-gray-500">${new Date(p.created_at).toLocaleDateString()}</div>
@@ -2091,545 +2103,545 @@
                                 <button class="px-3 py-1 bg-red-500 text-white rounded delete-portfolio" data-id="${p.id}">Delete</button>
                             </div>
                         `;
-                        listEl.appendChild(item);
-                    });
-
-                    // Attach event handlers
-                    listEl.querySelectorAll('.load-portfolio').forEach(btn => {
-                        btn.addEventListener('click', async (e) => {
-                            const id = e.currentTarget.getAttribute('data-id');
-                            const fetchLive = document.getElementById('loadFetchLive') ? document.getElementById('loadFetchLive').checked : true;
-                            await loadPortfolio(id, fetchLive);
-                            closePortfolioModalFn();
+                            listEl.appendChild(item);
                         });
-                    });
 
-                    listEl.querySelectorAll('.delete-portfolio').forEach(btn => {
-                        btn.addEventListener('click', async (e) => {
-                            const id = e.currentTarget.getAttribute('data-id');
-                            if (!confirm('Delete portfolio?')) return;
-                            await deletePortfolio(id);
-                            fetchAndRenderPortfolios();
+                        // Attach event handlers
+                        listEl.querySelectorAll('.load-portfolio').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                const id = e.currentTarget.getAttribute('data-id');
+                                const fetchLive = document.getElementById('loadFetchLive') ? document.getElementById('loadFetchLive').checked : true;
+                                await loadPortfolio(id, fetchLive);
+                                closePortfolioModalFn();
+                            });
                         });
-                    });
 
-                } catch (err) {
-                    listEl.innerHTML = `<p class="text-red-500">${escapeHtml(err.message)}</p>`;
+                        listEl.querySelectorAll('.delete-portfolio').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                const id = e.currentTarget.getAttribute('data-id');
+                                if (!confirm('Delete portfolio?')) return;
+                                await deletePortfolio(id);
+                                fetchAndRenderPortfolios();
+                            });
+                        });
+
+                    } catch (err) {
+                        listEl.innerHTML = `<p class="text-red-500">${escapeHtml(err.message)}</p>`;
+                    }
                 }
-            }
 
-            async function loadPortfolio(id, fetchLive = true) {
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio/${id}`);
-                    if (!res.ok) throw new Error('Failed to load portfolio');
-                    const data = await res.json();
+                async function loadPortfolio(id, fetchLive = true) {
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio/${id}`);
+                        if (!res.ok) throw new Error('Failed to load portfolio');
+                        const data = await res.json();
 
-                    // Set current ID
-                    currentPortfolioId = data.id;
-                    // Show add asset button
-                    document.getElementById('addAssetBtn').classList.remove('hidden');
+                        // Set current ID
+                        currentPortfolioId = data.id;
+                        // Show add asset button
+                        document.getElementById('addAssetBtn').classList.remove('hidden');
 
-                    // Map holdings
-                    const holdings = data.holdings.map(h => ({
-                        ticker: h.ticker,
-                        Symbol: h.ticker,
-                        quantity: Number(h.quantity || 0),
-                        Quantity: Number(h.quantity || 0),
-                        price: Number(h.price || 0),
-                        'Price ($)': Number(h.price || 0),
-                        cost_basis: Number(h.cost_basis || 0) || 0,
-                        'Principal ($)*': Number(h.cost_basis || 0) || 0,
-                        value: (Number(h.price || 0) * Number(h.quantity || 0)) || 0,
-                        allocation_pct: 0,
-                        daily_change: 0,
-                        yield_pct: h.metadata?.yield_pct || 0,
-                        annual_income: h.metadata?.annual_income || 0
-                    }));
+                        // Map holdings
+                        const holdings = data.holdings.map(h => ({
+                            ticker: h.ticker,
+                            Symbol: h.ticker,
+                            quantity: Number(h.quantity || 0),
+                            Quantity: Number(h.quantity || 0),
+                            price: Number(h.price || 0),
+                            'Price ($)': Number(h.price || 0),
+                            cost_basis: Number(h.cost_basis || 0) || 0,
+                            'Principal ($)*': Number(h.cost_basis || 0) || 0,
+                            value: (Number(h.price || 0) * Number(h.quantity || 0)) || 0,
+                            allocation_pct: 0,
+                            daily_change: 0,
+                            yield_pct: h.metadata?.yield_pct || 0,
+                            annual_income: h.metadata?.annual_income || 0
+                        }));
 
-                    // Optionally fetch live prices for these tickers
-                    if (fetchLive) {
-                        const tickers = holdings.map(h => h.ticker).filter(Boolean);
-                        const quotes = await fetchLivePrices(tickers);
+                        // Optionally fetch live prices for these tickers
+                        if (fetchLive) {
+                            const tickers = holdings.map(h => h.ticker).filter(Boolean);
+                            const quotes = await fetchLivePrices(tickers);
 
-                        // Apply live prices if available
+                            // Apply live prices if available
+                            holdings.forEach(h => {
+                                const q = quotes[h.ticker] || quotes[h.ticker.toUpperCase()];
+                                if (q && typeof q.price !== 'undefined') {
+                                    const livePrice = Number(q.price || q.last || q.current || 0);
+                                    const changePct = Number(q.change_pct || q.changePercent || 0);
+                                    h.price = livePrice;
+                                    h['Price ($)'] = livePrice;
+                                    h.value = livePrice * (h.quantity || 0);
+                                    h.daily_change = (q.change_amt || 0);
+                                    h.change_pct = changePct;
+                                }
+                            });
+                        }
+
+                        // Recompute allocation and summary
+                        const totalValue = holdings.reduce((s, it) => s + (it.value || 0), 0) || 0;
                         holdings.forEach(h => {
-                            const q = quotes[h.ticker] || quotes[h.ticker.toUpperCase()];
-                            if (q && typeof q.price !== 'undefined') {
-                                const livePrice = Number(q.price || q.last || q.current || 0);
-                                const changePct = Number(q.change_pct || q.changePercent || 0);
-                                h.price = livePrice;
-                                h['Price ($)'] = livePrice;
-                                h.value = livePrice * (h.quantity || 0);
-                                h.daily_change = (q.change_amt || 0);
-                                h.change_pct = changePct;
+                            h.allocation_pct = totalValue ? ((h.value || 0) / totalValue) * 100 : 0;
+                        });
+
+                        const summary = computeSummaryFromHoldings(holdings);
+                        const charts = computeChartsFromHoldings(holdings);
+
+                        const mapped = { summary, charts, holdings };
+
+                        portfolioData = mapped;
+                        renderDashboard(mapped);
+                        // switch to dashboard tab
+                        document.querySelector('[data-tab="dashboard"]').click();
+                        // If the loaded portfolio has a name or id, set header client input and saved id
+                        try {
+                            const clientInput = document.getElementById('clientNameInput');
+                            if (clientInput) clientInput.value = data.name || (portfolioData.metadata && portfolioData.metadata.saved_name) || '';
+                            const idEl = document.getElementById('savedPortfolioId');
+                            if (idEl && data && data.id) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + data.id; }
+                        } catch (e) { }
+                    } catch (err) {
+                        alert('Error loading portfolio: ' + err.message);
+                    }
+                }
+
+                async function deletePortfolio(id) {
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio/${id}`, { method: 'DELETE' });
+                        if (!res.ok) throw new Error('Delete failed');
+                        alert('Deleted');
+                    } catch (err) {
+                        alert('Error deleting portfolio: ' + err.message);
+                    }
+                }
+
+                /* ------------------ Save Modal & Live Price Helpers ------------------ */
+                function openSaveModal() {
+                    // Pre-fill with a decent default name
+                    const nameInput = document.getElementById('saveNameInput');
+                    nameInput.value = portfolioData && portfolioData.summary && portfolioData.summary.num_holdings ? `Portfolio (${portfolioData.summary.num_holdings} holdings)` : 'My Portfolio';
+                    document.getElementById('saveModal').classList.remove('hidden');
+
+                    // Attach handlers
+                    document.getElementById('confirmSaveBtn').onclick = handleSaveConfirm;
+                    document.getElementById('cancelSaveBtn').onclick = closeSaveModal;
+                    document.getElementById('closeSaveModal').onclick = closeSaveModal;
+                }
+
+                function closeSaveModal() {
+                    document.getElementById('saveModal').classList.add('hidden');
+                }
+
+                async function handleSaveConfirm() {
+                    const name = document.getElementById('saveNameInput').value.trim();
+                    if (!name) {
+                        alert('Please provide a name');
+                        return;
+                    }
+
+                    const payload = buildSavePayload(name);
+                    if (!payload) {
+                        alert('No portfolio data to save');
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const data = await res.json();
+                        if (res.ok) {
+                            // Store returned portfolio id & metadata so export can reference it
+                            if (!portfolioData) portfolioData = {};
+                            portfolioData.id = data.id;
+                            portfolioData.metadata = portfolioData.metadata || {};
+                            portfolioData.metadata.saved_name = data.name || payload.name;
+                            // Update visible client input and header saved id
+                            try {
+                                document.getElementById('clientNameInput').value = data.name || payload.name || '';
+                                const idEl = document.getElementById('savedPortfolioId');
+                                if (idEl) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + (data.id || '—'); }
+                            } catch (e) { }
+                            alert('Portfolio saved successfully (ID: ' + data.id + ')');
+                            closeSaveModal();
+                        } else {
+                            alert('Failed to save portfolio: ' + (data.detail || JSON.stringify(data)));
+                        }
+                    } catch (err) {
+                        alert('Error saving portfolio: ' + err.message);
+                    }
+                }
+
+                async function fetchLivePrices(tickers) {
+                    if (!tickers || tickers.length === 0) return {};
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/market/quotes/batch`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tickers })
+                        });
+                        if (!res.ok) return {};
+                        const data = await res.json();
+                        // Expected shape: { success: true, quotes: { TICKER: { price, change_pct, ... } }, count }
+                        return data.quotes || {};
+                    } catch (err) {
+                        console.error('fetchLivePrices error', err);
+                        return {};
+                    }
+                }
+
+                // Auto-refresh state
+                let _autoRefreshTimer = null;
+
+                function startAutoRefresh() {
+                    // Avoid multiple timers
+                    if (_autoRefreshTimer) return;
+                    // Trigger an immediate refresh, then every 10s
+                    refreshLivePrices();
+                    _autoRefreshTimer = setInterval(() => refreshLivePrices(), 10000);
+                }
+
+                function stopAutoRefresh() {
+                    if (!_autoRefreshTimer) return;
+                    clearInterval(_autoRefreshTimer);
+                    _autoRefreshTimer = null;
+                }
+
+                async function exportToPDF() {
+                    // Prefer client name from the input field, otherwise prompt
+                    const clientInput = document.getElementById('clientNameInput');
+                    let clientName = clientInput ? (clientInput.value || '').trim() : '';
+                    if (!clientName) {
+                        clientName = prompt('Enter client name for the report:', (portfolioData && portfolioData.metadata && (portfolioData.metadata.saved_name || portfolioData.metadata.filename)) || 'Valued Client');
+                    }
+
+                    // If user cancels prompt, do nothing
+                    if (clientName === null) return;
+
+                    try {
+                        // Show loading state
+                        exportPdfBtn.disabled = true;
+                        exportPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating PDF...';
+
+                        const formData = new FormData();
+
+                        // If there's a loaded file, send it
+                        if (currentFile) {
+                            formData.append('file', currentFile);
+                        }
+
+                        // If the portfolio was saved and we have an id, send portfolio_id instead
+                        if (portfolioData && portfolioData.id) {
+                            formData.append('portfolio_id', portfolioData.id);
+                        }
+
+                        formData.append('client_name', clientName);
+
+                        const response = await fetch(`${API_URL}/api/portfolio/export-pdf`, {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+                            throw new Error(err.detail || err.error || 'PDF generation failed');
+                        }
+
+                        // Get PDF blob
+                        const blob = await response.blob();
+
+                        // Create download link
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `Portfolio_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+
+                        // Show success message
+                        alert('PDF report generated successfully!');
+
+                    } catch (error) {
+                        console.error('PDF export failed:', error);
+                        showError('Failed to generate PDF report: ' + (error.message || error));
+                    } finally {
+                        // Reset button
+                        exportPdfBtn.disabled = false;
+                        exportPdfBtn.innerHTML = '<i class="fas fa-file-pdf mr-2"></i>Export PDF Report';
+                    }
+                }
+
+                async function refreshLivePrices() {
+                    if (!portfolioData || !portfolioData.holdings) return;
+
+                    const refreshPricesBtn = document.getElementById('refreshPricesBtn');
+                    const lastRefreshed = document.getElementById('lastRefreshed');
+                    const origText = refreshPricesBtn.innerHTML;
+
+                    try {
+                        refreshPricesBtn.innerHTML = '\u003ci class="fas fa-spinner fa-spin mr-2"\u003e\u003c/i\u003eRefreshing...';
+                        refreshPricesBtn.disabled = true;
+
+                        const tickers = portfolioData.holdings.map(h => h.Symbol || h.ticker).filter(Boolean);
+                        const freshPrices = await fetchLivePrices(tickers);
+
+                        portfolioData.holdings.forEach(h => {
+                            const ticker = h.Symbol || h.ticker;
+                            const quote = freshPrices[ticker];
+                            if (quote && quote.price) {
+                                h['Price ($)'] = quote.price;
+                                h.price = quote.price;
+                                h.value = h.price * (h.Quantity || h.quantity || 0);
                             }
                         });
-                    }
 
-                    // Recompute allocation and summary
-                    const totalValue = holdings.reduce((s, it) => s + (it.value || 0), 0) || 0;
+                        const now = new Date();
+                        lastRefreshed.textContent = 'Last refreshed: ' + now.toLocaleTimeString();
+
+                        // Re-render dashboard parts
+                        renderDashboard(portfolioData);
+                    } catch (err) {
+                        console.error('Refresh failed', err);
+                        alert('Failed to refresh live prices');
+                    } finally {
+                        refreshPricesBtn.innerHTML = origText;
+                        refreshPricesBtn.disabled = false;
+                    }
+                }
+
+                function computeSummaryFromHoldings(holdings) {
+                    const summary = {
+                        total_value: 0,
+                        total_principal: 0,
+                        total_gain_loss: 0,
+                        total_daily_change: 0,
+                        overall_return_pct: 0,
+                        daily_return_pct: 0,
+                        total_annual_income: 0,
+                        avg_yield: 0,
+                        num_holdings: holdings.length
+                    };
+
                     holdings.forEach(h => {
-                        h.allocation_pct = totalValue ? ((h.value || 0) / totalValue) * 100 : 0;
+                        summary.total_value += h.value || 0;
+                        summary.total_principal += h.cost_basis || 0;
+                        summary.total_annual_income += h.annual_income || 0;
+                        summary.total_daily_change += h.daily_change || 0;
+                        summary.total_gain_loss += (h.value || 0) - (h.cost_basis || 0);
+                        summary.avg_yield += (h.yield_pct || 0);
                     });
 
-                    const summary = computeSummaryFromHoldings(holdings);
-                    const charts = computeChartsFromHoldings(holdings);
+                    if (holdings.length > 0) {
+                        summary.avg_yield = summary.avg_yield / holdings.length;
+                        summary.overall_return_pct = summary.total_principal ? (summary.total_gain_loss / summary.total_principal) * 100 : 0;
+                        summary.daily_return_pct = summary.total_value ? (summary.total_daily_change / summary.total_value) * 100 : 0;
+                    }
 
-                    const mapped = { summary, charts, holdings };
-
-                    portfolioData = mapped;
-                    renderDashboard(mapped);
-                    // switch to dashboard tab
-                    document.querySelector('[data-tab="dashboard"]').click();
-                    // If the loaded portfolio has a name or id, set header client input and saved id
-                    try {
-                        const clientInput = document.getElementById('clientNameInput');
-                        if (clientInput) clientInput.value = data.name || (portfolioData.metadata && portfolioData.metadata.saved_name) || '';
-                        const idEl = document.getElementById('savedPortfolioId');
-                        if (idEl && data && data.id) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + data.id; }
-                    } catch (e) { }
-                } catch (err) {
-                    alert('Error loading portfolio: ' + err.message);
-                }
-            }
-
-            async function deletePortfolio(id) {
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio/${id}`, { method: 'DELETE' });
-                    if (!res.ok) throw new Error('Delete failed');
-                    alert('Deleted');
-                } catch (err) {
-                    alert('Error deleting portfolio: ' + err.message);
-                }
-            }
-
-            /* ------------------ Save Modal & Live Price Helpers ------------------ */
-            function openSaveModal() {
-                // Pre-fill with a decent default name
-                const nameInput = document.getElementById('saveNameInput');
-                nameInput.value = portfolioData && portfolioData.summary && portfolioData.summary.num_holdings ? `Portfolio (${portfolioData.summary.num_holdings} holdings)` : 'My Portfolio';
-                document.getElementById('saveModal').classList.remove('hidden');
-
-                // Attach handlers
-                document.getElementById('confirmSaveBtn').onclick = handleSaveConfirm;
-                document.getElementById('cancelSaveBtn').onclick = closeSaveModal;
-                document.getElementById('closeSaveModal').onclick = closeSaveModal;
-            }
-
-            function closeSaveModal() {
-                document.getElementById('saveModal').classList.add('hidden');
-            }
-
-            async function handleSaveConfirm() {
-                const name = document.getElementById('saveNameInput').value.trim();
-                if (!name) {
-                    alert('Please provide a name');
-                    return;
+                    return summary;
                 }
 
-                const payload = buildSavePayload(name);
-                if (!payload) {
-                    alert('No portfolio data to save');
-                    return;
+                function computeChartsFromHoldings(holdings) {
+                    const allocation_by_symbol = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', 'Value ($)': h.value || 0, 'Assets (%)': h.allocation_pct || 0 }));
+                    const allocation_by_type = buildAllocationByType(holdings);
+                    const gain_loss_by_symbol = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', 'NFS G/L ($)': (h.value || 0) - (h.cost_basis || 0) }));
+                    const daily_movement = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', '1-Day Value Change ($)': h.daily_change || 0 }));
+
+                    return { allocation_by_symbol, allocation_by_type, gain_loss_by_symbol, daily_movement };
                 }
 
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                function escapeHtml(unsafe) {
+                    return String(unsafe)
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/\"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+                }
+
+                function exportToCSV() {
+                    if (!portfolioData) return;
+
+                    const holdings = portfolioData.holdings;
+                    const headers = Object.keys(holdings[0]);
+
+                    let csv = headers.join(',') + '\n';
+                    holdings.forEach(row => {
+                        csv += headers.map(h => `"${row[h]}"`).join(',') + '\n';
                     });
 
-                    const data = await res.json();
-                    if (res.ok) {
-                        // Store returned portfolio id & metadata so export can reference it
-                        if (!portfolioData) portfolioData = {};
-                        portfolioData.id = data.id;
-                        portfolioData.metadata = portfolioData.metadata || {};
-                        portfolioData.metadata.saved_name = data.name || payload.name;
-                        // Update visible client input and header saved id
-                        try {
-                            document.getElementById('clientNameInput').value = data.name || payload.name || '';
-                            const idEl = document.getElementById('savedPortfolioId');
-                            if (idEl) { idEl.style.display = ''; idEl.textContent = 'Saved ID: ' + (data.id || '—'); }
-                        } catch (e) { }
-                        alert('Portfolio saved successfully (ID: ' + data.id + ')');
-                        closeSaveModal();
-                    } else {
-                        alert('Failed to save portfolio: ' + (data.detail || JSON.stringify(data)));
-                    }
-                } catch (err) {
-                    alert('Error saving portfolio: ' + err.message);
-                }
-            }
-
-            async function fetchLivePrices(tickers) {
-                if (!tickers || tickers.length === 0) return {};
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/market/quotes/batch`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tickers })
-                    });
-                    if (!res.ok) return {};
-                    const data = await res.json();
-                    // Expected shape: { success: true, quotes: { TICKER: { price, change_pct, ... } }, count }
-                    return data.quotes || {};
-                } catch (err) {
-                    console.error('fetchLivePrices error', err);
-                    return {};
-                }
-            }
-
-            // Auto-refresh state
-            let _autoRefreshTimer = null;
-
-            function startAutoRefresh() {
-                // Avoid multiple timers
-                if (_autoRefreshTimer) return;
-                // Trigger an immediate refresh, then every 10s
-                refreshLivePrices();
-                _autoRefreshTimer = setInterval(() => refreshLivePrices(), 10000);
-            }
-
-            function stopAutoRefresh() {
-                if (!_autoRefreshTimer) return;
-                clearInterval(_autoRefreshTimer);
-                _autoRefreshTimer = null;
-            }
-
-            async function exportToPDF() {
-                // Prefer client name from the input field, otherwise prompt
-                const clientInput = document.getElementById('clientNameInput');
-                let clientName = clientInput ? (clientInput.value || '').trim() : '';
-                if (!clientName) {
-                    clientName = prompt('Enter client name for the report:', (portfolioData && portfolioData.metadata && (portfolioData.metadata.saved_name || portfolioData.metadata.filename)) || 'Valued Client');
-                }
-
-                // If user cancels prompt, do nothing
-                if (clientName === null) return;
-
-                try {
-                    // Show loading state
-                    exportPdfBtn.disabled = true;
-                    exportPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating PDF...';
-
-                    const formData = new FormData();
-
-                    // If there's a loaded file, send it
-                    if (currentFile) {
-                        formData.append('file', currentFile);
-                    }
-
-                    // If the portfolio was saved and we have an id, send portfolio_id instead
-                    if (portfolioData && portfolioData.id) {
-                        formData.append('portfolio_id', portfolioData.id);
-                    }
-
-                    formData.append('client_name', clientName);
-
-                    const response = await fetch(`${API_URL}/api/portfolio/export-pdf`, {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-                        throw new Error(err.detail || err.error || 'PDF generation failed');
-                    }
-
-                    // Get PDF blob
-                    const blob = await response.blob();
-
-                    // Create download link
+                    const blob = new Blob([csv], { type: 'text/csv' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `Portfolio_Report_${new Date().toISOString().split('T')[0]}.pdf`;
-                    document.body.appendChild(a);
+                    a.download = 'portfolio_export.csv';
                     a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-
-                    // Show success message
-                    alert('PDF report generated successfully!');
-
-                } catch (error) {
-                    console.error('PDF export failed:', error);
-                    showError('Failed to generate PDF report: ' + (error.message || error));
-                } finally {
-                    // Reset button
-                    exportPdfBtn.disabled = false;
-                    exportPdfBtn.innerHTML = '<i class="fas fa-file-pdf mr-2"></i>Export PDF Report';
-                }
-            }
-
-            async function refreshLivePrices() {
-                if (!portfolioData || !portfolioData.holdings) return;
-
-                const refreshPricesBtn = document.getElementById('refreshPricesBtn');
-                const lastRefreshed = document.getElementById('lastRefreshed');
-                const origText = refreshPricesBtn.innerHTML;
-
-                try {
-                    refreshPricesBtn.innerHTML = '\u003ci class="fas fa-spinner fa-spin mr-2"\u003e\u003c/i\u003eRefreshing...';
-                    refreshPricesBtn.disabled = true;
-
-                    const tickers = portfolioData.holdings.map(h => h.Symbol || h.ticker).filter(Boolean);
-                    const freshPrices = await fetchLivePrices(tickers);
-
-                    portfolioData.holdings.forEach(h => {
-                        const ticker = h.Symbol || h.ticker;
-                        const quote = freshPrices[ticker];
-                        if (quote && quote.price) {
-                            h['Price ($)'] = quote.price;
-                            h.price = quote.price;
-                            h.value = h.price * (h.Quantity || h.quantity || 0);
-                        }
-                    });
-
-                    const now = new Date();
-                    lastRefreshed.textContent = 'Last refreshed: ' + now.toLocaleTimeString();
-
-                    // Re-render dashboard parts
-                    renderDashboard(portfolioData);
-                } catch (err) {
-                    console.error('Refresh failed', err);
-                    alert('Failed to refresh live prices');
-                } finally {
-                    refreshPricesBtn.innerHTML = origText;
-                    refreshPricesBtn.disabled = false;
-                }
-            }
-
-            function computeSummaryFromHoldings(holdings) {
-                const summary = {
-                    total_value: 0,
-                    total_principal: 0,
-                    total_gain_loss: 0,
-                    total_daily_change: 0,
-                    overall_return_pct: 0,
-                    daily_return_pct: 0,
-                    total_annual_income: 0,
-                    avg_yield: 0,
-                    num_holdings: holdings.length
-                };
-
-                holdings.forEach(h => {
-                    summary.total_value += h.value || 0;
-                    summary.total_principal += h.cost_basis || 0;
-                    summary.total_annual_income += h.annual_income || 0;
-                    summary.total_daily_change += h.daily_change || 0;
-                    summary.total_gain_loss += (h.value || 0) - (h.cost_basis || 0);
-                    summary.avg_yield += (h.yield_pct || 0);
-                });
-
-                if (holdings.length > 0) {
-                    summary.avg_yield = summary.avg_yield / holdings.length;
-                    summary.overall_return_pct = summary.total_principal ? (summary.total_gain_loss / summary.total_principal) * 100 : 0;
-                    summary.daily_return_pct = summary.total_value ? (summary.total_daily_change / summary.total_value) * 100 : 0;
                 }
 
-                return summary;
-            }
-
-            function computeChartsFromHoldings(holdings) {
-                const allocation_by_symbol = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', 'Value ($)': h.value || 0, 'Assets (%)': h.allocation_pct || 0 }));
-                const allocation_by_type = buildAllocationByType(holdings);
-                const gain_loss_by_symbol = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', 'NFS G/L ($)': (h.value || 0) - (h.cost_basis || 0) }));
-                const daily_movement = holdings.map(h => ({ Symbol: h.Symbol || h.ticker || '', '1-Day Value Change ($)': h.daily_change || 0 }));
-
-                return { allocation_by_symbol, allocation_by_type, gain_loss_by_symbol, daily_movement };
-            }
-
-            function escapeHtml(unsafe) {
-                return String(unsafe)
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/\"/g, "&quot;")
-                    .replace(/'/g, "&#039;");
-            }
-
-            function exportToCSV() {
-                if (!portfolioData) return;
-
-                const holdings = portfolioData.holdings;
-                const headers = Object.keys(holdings[0]);
-
-                let csv = headers.join(',') + '\n';
-                holdings.forEach(row => {
-                    csv += headers.map(h => `"${row[h]}"`).join(',') + '\n';
-                });
-
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'portfolio_export.csv';
-                a.click();
-            }
 
 
 
-
-            // Advanced Analytics Functions
-            async function fetchAdvancedAnalytics(file) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-
-                    const response = await fetch(`${API_URL}/api/portfolio/analyze`, {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (!response.ok) throw new Error('Analytics fetch failed');
-
-                    const data = await response.json();
-                    return data.analytics; // return 'analytics' key which matches main dashboard structure
-                } catch (error) {
-                    console.error('Failed to fetch advanced analytics:', error);
-                    return null;
-                }
-            }
-
-            // Builder State
-            let builderHoldings = [];
-            let builderCharts = {};
-
-            // Initialize
-            document.addEventListener('DOMContentLoaded', () => {
-                setupTabs();
-                setupBuilder();
-            });
-
-            function setupBuilder() {
-                const searchInput = document.getElementById('assetSearch');
-                const resultsDiv = document.getElementById('searchResults');
-                const simulateBtn = document.getElementById('simulateBtn');
-                const searchIcon = document.getElementById('searchIcon');
-                const searchSpinner = document.getElementById('searchSpinner');
-
-                // Search Debounce with Loading State
-                let timeout = null;
-                searchInput.addEventListener('input', (e) => {
-                    clearTimeout(timeout);
-                    const query = e.target.value.trim();
-
-                    if (query.length < 1) {
-                        resultsDiv.classList.add('hidden');
-                        searchIcon.classList.remove('hidden');
-                        searchSpinner.classList.add('hidden');
-                        return;
-                    }
-
-                    // Show loading state
-                    searchIcon.classList.add('hidden');
-                    searchSpinner.classList.remove('hidden');
-
-                    timeout = setTimeout(async () => {
-                        try {
-                            const response = await fetch(`${API_URL}/api/v2/market/search/${query}`);
-                            searchSpinner.classList.add('hidden');
-                            searchIcon.classList.remove('hidden');
-
-                            if (!response.ok) throw new Error('Search failed');
-                            const data = await response.json();
-
-                            // Handle both array and object responses
-                            const results = Array.isArray(data) ? data : (data.results || []);
-                            renderSearchResults(results, query);
-                        } catch (error) {
-                            console.error('Search error:', error);
-                            searchSpinner.classList.add('hidden');
-                            searchIcon.classList.remove('hidden');
-                            resultsDiv.innerHTML = '<div class="p-3 text-sm text-red-500"><i class="fas fa-exclamation-triangle mr-2"></i>Search failed. Try another symbol.</div>';
-                            resultsDiv.classList.remove('hidden');
-                            Toast.error('Unable to search. Please check your connection.');
-                        }
-                    }, 500);
-                });
-
-                // Enter key support
-                searchInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        document.getElementById('manualAddBtn').click();
-                    }
-                });
-
-                // Simulate Button
-                simulateBtn.addEventListener('click', runSimulation);
-
-                // Manual Add Button - Enhanced
-                document.getElementById('manualAddBtn').addEventListener('click', async () => {
-                    const query = searchInput.value.trim().toUpperCase();
-                    if (!query) {
-                        Toast.warning('Please enter a stock symbol');
-                        searchInput.focus();
-                        return;
-                    }
-
-                    // Show loading on button
-                    const btn = document.getElementById('manualAddBtn');
-                    const originalHTML = btn.innerHTML;
-                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                    btn.disabled = true;
-
-                    // Try to fetch data first
+                // Advanced Analytics Functions
+                async function fetchAdvancedAnalytics(file) {
                     try {
-                        console.log('Fetching stock data for', query);
-                        const response = await fetch(`${API_URL}/api/market/search?q=${query}`);
-                        console.log('Response status:', response.status);
+                        const formData = new FormData();
+                        formData.append('file', file);
 
-                        if (response.ok) {
-                            const data = await response.json();
-                            console.log('API response data:', data);
-                            const results = Array.isArray(data) ? data : (data.results || []);
+                        const response = await fetch(`${API_URL}/api/portfolio/analyze`, {
+                            method: 'POST',
+                            body: formData
+                        });
 
-                            if (results.length > 0) {
-                                console.log('Adding stock to builder:', results[0]);
-                                addToBuilder(results[0], true); // Add with animation
-                                btn.innerHTML = originalHTML;
-                                btn.disabled = false;
-                                return;
-                            } else {
-                                console.warn('No results found for', query);
-                                Toast.info(`No data found for ${query}. Adding as manual entry.`);
-                            }
-                        } else {
-                            console.error('API request failed with status:', response.status);
-                            Toast.warning(`Could not fetch data for ${query}. Adding as manual entry.`);
-                        }
-                    } catch (e) {
-                        console.error('Error fetching stock data:', e);
-                        Toast.warning(`Error fetching ${query} data. Adding as manual entry.`);
+                        if (!response.ok) throw new Error('Analytics fetch failed');
+
+                        const data = await response.json();
+                        return data.analytics; // return 'analytics' key which matches main dashboard structure
+                    } catch (error) {
+                        console.error('Failed to fetch advanced analytics:', error);
+                        return null;
                     }
+                }
 
-                    // Fallback: manual entry
-                    console.log('Adding as manual entry:', query);
-                    addToBuilder({ symbol: query, price: 0, name: 'Manual Entry' }, true);
-                    btn.innerHTML = originalHTML;
-                    btn.disabled = false;
+                // Builder State
+                let builderHoldings = [];
+                let builderCharts = {};
+
+                // Initialize
+                document.addEventListener('DOMContentLoaded', () => {
+                    setupTabs();
+                    setupBuilder();
                 });
-            }
 
-            function renderSearchResults(results, query = '') {
-                const resultsDiv = document.getElementById('searchResults');
-                resultsDiv.innerHTML = '';
+                function setupBuilder() {
+                    const searchInput = document.getElementById('assetSearch');
+                    const resultsDiv = document.getElementById('searchResults');
+                    const simulateBtn = document.getElementById('simulateBtn');
+                    const searchIcon = document.getElementById('searchIcon');
+                    const searchSpinner = document.getElementById('searchSpinner');
 
-                if (!results || results.length === 0) {
-                    resultsDiv.innerHTML = `
+                    // Search Debounce with Loading State
+                    let timeout = null;
+                    searchInput.addEventListener('input', (e) => {
+                        clearTimeout(timeout);
+                        const query = e.target.value.trim();
+
+                        if (query.length < 1) {
+                            resultsDiv.classList.add('hidden');
+                            searchIcon.classList.remove('hidden');
+                            searchSpinner.classList.add('hidden');
+                            return;
+                        }
+
+                        // Show loading state
+                        searchIcon.classList.add('hidden');
+                        searchSpinner.classList.remove('hidden');
+
+                        timeout = setTimeout(async () => {
+                            try {
+                                const response = await fetch(`${API_URL}/api/v2/market/search/${query}`);
+                                searchSpinner.classList.add('hidden');
+                                searchIcon.classList.remove('hidden');
+
+                                if (!response.ok) throw new Error('Search failed');
+                                const data = await response.json();
+
+                                // Handle both array and object responses
+                                const results = Array.isArray(data) ? data : (data.results || []);
+                                renderSearchResults(results, query);
+                            } catch (error) {
+                                console.error('Search error:', error);
+                                searchSpinner.classList.add('hidden');
+                                searchIcon.classList.remove('hidden');
+                                resultsDiv.innerHTML = '<div class="p-3 text-sm text-red-500"><i class="fas fa-exclamation-triangle mr-2"></i>Search failed. Try another symbol.</div>';
+                                resultsDiv.classList.remove('hidden');
+                                Toast.error('Unable to search. Please check your connection.');
+                            }
+                        }, 500);
+                    });
+
+                    // Enter key support
+                    searchInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            document.getElementById('manualAddBtn').click();
+                        }
+                    });
+
+                    // Simulate Button
+                    simulateBtn.addEventListener('click', runSimulation);
+
+                    // Manual Add Button - Enhanced
+                    document.getElementById('manualAddBtn').addEventListener('click', async () => {
+                        const query = searchInput.value.trim().toUpperCase();
+                        if (!query) {
+                            Toast.warning('Please enter a stock symbol');
+                            searchInput.focus();
+                            return;
+                        }
+
+                        // Show loading on button
+                        const btn = document.getElementById('manualAddBtn');
+                        const originalHTML = btn.innerHTML;
+                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        btn.disabled = true;
+
+                        // Try to fetch data first
+                        try {
+                            console.log('Fetching stock data for', query);
+                            const response = await fetch(`${API_URL}/api/market/search?q=${query}`);
+                            console.log('Response status:', response.status);
+
+                            if (response.ok) {
+                                const data = await response.json();
+                                console.log('API response data:', data);
+                                const results = Array.isArray(data) ? data : (data.results || []);
+
+                                if (results.length > 0) {
+                                    console.log('Adding stock to builder:', results[0]);
+                                    addToBuilder(results[0], true); // Add with animation
+                                    btn.innerHTML = originalHTML;
+                                    btn.disabled = false;
+                                    return;
+                                } else {
+                                    console.warn('No results found for', query);
+                                    Toast.info(`No data found for ${query}. Adding as manual entry.`);
+                                }
+                            } else {
+                                console.error('API request failed with status:', response.status);
+                                Toast.warning(`Could not fetch data for ${query}. Adding as manual entry.`);
+                            }
+                        } catch (e) {
+                            console.error('Error fetching stock data:', e);
+                            Toast.warning(`Error fetching ${query} data. Adding as manual entry.`);
+                        }
+
+                        // Fallback: manual entry
+                        console.log('Adding as manual entry:', query);
+                        addToBuilder({ symbol: query, price: 0, name: 'Manual Entry' }, true);
+                        btn.innerHTML = originalHTML;
+                        btn.disabled = false;
+                    });
+                }
+
+                function renderSearchResults(results, query = '') {
+                    const resultsDiv = document.getElementById('searchResults');
+                    resultsDiv.innerHTML = '';
+
+                    if (!results || results.length === 0) {
+                        resultsDiv.innerHTML = `
                         <div class="p-4 text-center">
                             <i class="fas fa-search text-2xl text-gray-300 mb-2"></i>
                             <p class="text-sm text-gray-500">No results found for "${query}"</p>
                             <p class="text-xs text-gray-400 mt-1">Try a different symbol</p>
                         </div>
                     `;
-                } else {
-                    // Add result count header
-                    const headerHTML = `
+                    } else {
+                        // Add result count header
+                        const headerHTML = `
                         <div class="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                             <span class="text-xs font-medium text-gray-600">
                                 <i class="fas fa-list mr-1"></i>${results.length} result${results.length > 1 ? 's' : ''}
@@ -2637,12 +2649,12 @@
                             <span class="text-xs text-gray-400">Click to add</span>
                         </div>
                     `;
-                    resultsDiv.innerHTML = headerHTML;
+                        resultsDiv.innerHTML = headerHTML;
 
-                    results.forEach((item, index) => {
-                        const div = document.createElement('div');
-                        div.className = 'p-3 hover:bg-blue-50 cursor-pointer flex justify-between items-center border-b border-gray-100 last:border-0 transition-colors';
-                        div.innerHTML = `
+                        results.forEach((item, index) => {
+                            const div = document.createElement('div');
+                            div.className = 'p-3 hover:bg-blue-50 cursor-pointer flex justify-between items-center border-b border-gray-100 last:border-0 transition-colors';
+                            div.innerHTML = `
                             <div class="flex-1">
                                 <div class="font-bold text-gray-900">${item.symbol}</div>
                                 <div class="text-xs text-gray-500 truncate">${item.name || 'Unknown'}</div>
@@ -2653,60 +2665,60 @@
                                 <div class="text-xs text-gray-400">${item.exchange || ''}</div>
                             </div>
                         `;
-                        div.onclick = () => {
-                            addToBuilder(item, true);
-                            resultsDiv.classList.add('hidden');
-                        };
-                        resultsDiv.appendChild(div);
+                            div.onclick = () => {
+                                addToBuilder(item, true);
+                                resultsDiv.classList.add('hidden');
+                            };
+                            resultsDiv.appendChild(div);
 
-                        // Stagger animation
-                        div.style.animation = `fadeIn 0.2s ease-out ${index * 0.05}s both`;
-                    });
-                }
-                resultsDiv.classList.remove('hidden');
-            }
-
-            function addToBuilder(asset, showFeedback = false) {
-                // Check if already exists
-                if (builderHoldings.find(h => h.symbol === asset.symbol)) {
-                    if (showFeedback) {
-                        Toast.warning(`${asset.symbol} is already in your portfolio`);
+                            // Stagger animation
+                            div.style.animation = `fadeIn 0.2s ease-out ${index * 0.05}s both`;
+                        });
                     }
-                    return;
+                    resultsDiv.classList.remove('hidden');
                 }
 
-                builderHoldings.push({
-                    symbol: asset.symbol,
-                    weight: 0, // Default 0
-                    price: asset.price,
-                    name: asset.name || asset.symbol
-                });
+                function addToBuilder(asset, showFeedback = false) {
+                    // Check if already exists
+                    if (builderHoldings.find(h => h.symbol === asset.symbol)) {
+                        if (showFeedback) {
+                            Toast.warning(`${asset.symbol} is already in your portfolio`);
+                        }
+                        return;
+                    }
 
-                // Show success feedback
-                if (showFeedback) {
-                    Toast.success(`Added ${asset.symbol} to portfolio`);
+                    builderHoldings.push({
+                        symbol: asset.symbol,
+                        weight: 0, // Default 0
+                        price: asset.price,
+                        name: asset.name || asset.symbol
+                    });
 
-                    // Pulse animation on holdings card
-                    const card = document.getElementById('holdingsCard');
-                    card.classList.add('pulse-success');
-                    setTimeout(() => card.classList.remove('pulse-success'), 1000);
+                    // Show success feedback
+                    if (showFeedback) {
+                        Toast.success(`Added ${asset.symbol} to portfolio`);
+
+                        // Pulse animation on holdings card
+                        const card = document.getElementById('holdingsCard');
+                        card.classList.add('pulse-success');
+                        setTimeout(() => card.classList.remove('pulse-success'), 1000);
+                    }
+
+                    renderBuilderHoldings();
+                    document.getElementById('assetSearch').value = '';
+                    document.getElementById('searchResults').classList.add('hidden');
+                    updateSimulateButton();
+                    updateHoldingsCount();
                 }
 
-                renderBuilderHoldings();
-                document.getElementById('assetSearch').value = '';
-                document.getElementById('searchResults').classList.add('hidden');
-                updateSimulateButton();
-                updateHoldingsCount();
-            }
+                function renderBuilderHoldings() {
+                    const container = document.getElementById('builderHoldingsList');
+                    const totalWeightEl = document.getElementById('totalWeight');
+                    const emptyState = document.getElementById('emptyHoldingsState');
 
-            function renderBuilderHoldings() {
-                const container = document.getElementById('builderHoldingsList');
-                const totalWeightEl = document.getElementById('totalWeight');
-                const emptyState = document.getElementById('emptyHoldingsState');
-
-                if (builderHoldings.length === 0) {
-                    if (!emptyState) {
-                        container.innerHTML = `
+                    if (builderHoldings.length === 0) {
+                        if (!emptyState) {
+                            container.innerHTML = `
                             <div id="emptyHoldingsState" class="text-center py-12">
                                 <div class="inline-block p-4 rounded-full bg-gray-100 mb-3">
                                     <i class="fas fa-folder-open text-4xl text-gray-400"></i>
@@ -2715,20 +2727,20 @@
                                 <p class="text-sm text-gray-400">Search for stocks above to start building your portfolio</p>
                             </div>
                         `;
-                    } else {
-                        emptyState.classList.remove('hidden');
+                        } else {
+                            emptyState.classList.remove('hidden');
+                        }
+                        totalWeightEl.textContent = 'Total: 0%';
+                        totalWeightEl.className = 'text-sm font-medium text-gray-500';
+                        return;
                     }
-                    totalWeightEl.textContent = 'Total: 0%';
-                    totalWeightEl.className = 'text-sm font-medium text-gray-500';
-                    return;
-                }
 
-                // Hide empty state
-                if (emptyState) {
-                    emptyState.classList.add('hidden');
-                }
+                    // Hide empty state
+                    if (emptyState) {
+                        emptyState.classList.add('hidden');
+                    }
 
-                container.innerHTML = builderHoldings.map((h, index) => `
+                    container.innerHTML = builderHoldings.map((h, index) => `
                     <div class="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 flex items-center justify-between border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all group">
                         <div class="flex-1">
                             <div class="flex items-center gap-2">
@@ -2761,398 +2773,398 @@
                     </div>
                 `).join('');
 
-                // Update Total
-                const total = builderHoldings.reduce((sum, h) => sum + h.weight, 0);
-                totalWeightEl.textContent = `Total: ${total.toFixed(1)}%`;
+                    // Update Total
+                    const total = builderHoldings.reduce((sum, h) => sum + h.weight, 0);
+                    totalWeightEl.textContent = `Total: ${total.toFixed(1)}%`;
 
-                if (Math.abs(total - 100) < 0.1) {
-                    totalWeightEl.className = 'text-sm font-bold text-green-600 flex items-center gap-1';
-                    totalWeightEl.innerHTML = `<i class="fas fa-check-circle"></i> Total: ${total.toFixed(1)}%`;
-                } else if (total > 100) {
-                    totalWeightEl.className = 'text-sm font-bold text-red-600 flex items-center gap-1';
-                    totalWeightEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Total: ${total.toFixed(1)}%`;
-                } else {
-                    totalWeightEl.className = 'text-sm font-bold text-orange-500 flex items-center gap-1';
-                    totalWeightEl.innerHTML = `<i class="fas fa-info-circle"></i> Total: ${total.toFixed(1)}%`;
-                }
-            }
-
-            // Helper function to update holdings count badge
-            function updateHoldingsCount() {
-                const badge = document.getElementById('holdingsCount');
-                if (badge) {
-                    badge.textContent = builderHoldings.length;
-                    if (builderHoldings.length > 0) {
-                        badge.classList.remove('bg-blue-100', 'text-blue-700');
-                        badge.classList.add('bg-green-100', 'text-green-700');
+                    if (Math.abs(total - 100) < 0.1) {
+                        totalWeightEl.className = 'text-sm font-bold text-green-600 flex items-center gap-1';
+                        totalWeightEl.innerHTML = `<i class="fas fa-check-circle"></i> Total: ${total.toFixed(1)}%`;
+                    } else if (total > 100) {
+                        totalWeightEl.className = 'text-sm font-bold text-red-600 flex items-center gap-1';
+                        totalWeightEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Total: ${total.toFixed(1)}%`;
                     } else {
-                        badge.classList.remove('bg-green-100', 'text-green-700');
-                        badge.classList.add('bg-blue-100', 'text-blue-700');
+                        totalWeightEl.className = 'text-sm font-bold text-orange-500 flex items-center gap-1';
+                        totalWeightEl.innerHTML = `<i class="fas fa-info-circle"></i> Total: ${total.toFixed(1)}%`;
                     }
                 }
-            }
 
-            window.updateWeight = (index, value) => {
-                builderHoldings[index].weight = parseFloat(value) || 0;
-                renderBuilderHoldings();
-            };
-
-            window.removeFromBuilder = (index) => {
-                builderHoldings.splice(index, 1);
-                renderBuilderHoldings();
-                updateSimulateButton();
-            };
-
-            function updateSimulateButton() {
-                const btn = document.getElementById('simulateBtn');
-                btn.disabled = builderHoldings.length === 0;
-            }
-
-            async function runSimulation() {
-                const btn = document.getElementById('simulateBtn');
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...';
-                btn.disabled = true;
-
-                try {
-                    console.log('Starting portfolio simulation with holdings:', builderHoldings);
-                    const response = await fetch(`${API_URL}/api/portfolio/simulate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ holdings: builderHoldings })
-                    });
-
-                    console.log('Simulation response status:', response.status);
-                    const data = await response.json();
-                    console.log('Simulation response data:', data);
-
-                    if (data.success) {
-                        console.log('Rendering simulation results...');
-                        renderSimulationResults(data.proposed);
-                        Toast.success('Portfolio analysis complete!');
-                    } else {
-                        console.error('Simulation failed:', data.error);
-                        Toast.error('Simulation failed: ' + data.error);
+                // Helper function to update holdings count badge
+                function updateHoldingsCount() {
+                    const badge = document.getElementById('holdingsCount');
+                    if (badge) {
+                        badge.textContent = builderHoldings.length;
+                        if (builderHoldings.length > 0) {
+                            badge.classList.remove('bg-blue-100', 'text-blue-700');
+                            badge.classList.add('bg-green-100', 'text-green-700');
+                        } else {
+                            badge.classList.remove('bg-green-100', 'text-green-700');
+                            badge.classList.add('bg-blue-100', 'text-blue-700');
+                        }
                     }
-                } catch (error) {
-                    console.error('Simulation error:', error);
-                    Toast.error('Error running simulation: ' + error.message);
-                } finally {
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
                 }
-            }
 
-            function renderSimulationResults(data) {
-                // Update Summary Cards
-                document.getElementById('previewReturn').textContent = formatCurrency(data.summary.total_gain_loss); // Using gain as proxy for return value for now, or use total_return %
-                // Actually summary has total_return_pct
-                document.getElementById('previewReturn').textContent = data.summary.total_return_pct + '%';
+                window.updateWeight = (index, value) => {
+                    builderHoldings[index].weight = parseFloat(value) || 0;
+                    renderBuilderHoldings();
+                };
 
-                // Risk
-                const vol = data.analytics.risk_metrics.volatility;
-                document.getElementById('previewRisk').textContent = (vol * 100).toFixed(2) + '%';
+                window.removeFromBuilder = (index) => {
+                    builderHoldings.splice(index, 1);
+                    renderBuilderHoldings();
+                    updateSimulateButton();
+                };
 
-                // Yield
-                const yieldVal = data.analytics.advanced_risk?.dividend_metrics?.average_yield || 0;
-                document.getElementById('previewYield').textContent = data.summary.avg_yield ? data.summary.avg_yield + '%' : '-';
+                function updateSimulateButton() {
+                    const btn = document.getElementById('simulateBtn');
+                    btn.disabled = builderHoldings.length === 0;
+                }
 
-                // Charts
-                renderBuilderCharts(data);
+                async function runSimulation() {
+                    const btn = document.getElementById('simulateBtn');
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...';
+                    btn.disabled = true;
 
-                // Risk Stats
-                renderRiskStats(data);
-            }
+                    try {
+                        console.log('Starting portfolio simulation with holdings:', builderHoldings);
+                        const response = await fetch(`${API_URL}/api/portfolio/simulate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ holdings: builderHoldings })
+                        });
 
-            function renderRiskStats(data) {
-                const riskContainer = document.getElementById('builderRiskStats');
-                const risk = data.analytics.risk_metrics;
-                const advRisk = data.analytics.advanced_risk;
+                        console.log('Simulation response status:', response.status);
+                        const data = await response.json();
+                        console.log('Simulation response data:', data);
 
-                let riskHTML = '<div class="grid grid-cols-2 gap-4">';
+                        if (data.success) {
+                            console.log('Rendering simulation results...');
+                            renderSimulationResults(data.proposed);
+                            Toast.success('Portfolio analysis complete!');
+                        } else {
+                            console.error('Simulation failed:', data.error);
+                            Toast.error('Simulation failed: ' + data.error);
+                        }
+                    } catch (error) {
+                        console.error('Simulation error:', error);
+                        Toast.error('Error running simulation: ' + error.message);
+                    } finally {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }
+                }
 
-                // Volatility
-                riskHTML += `
+                function renderSimulationResults(data) {
+                    // Update Summary Cards
+                    document.getElementById('previewReturn').textContent = formatCurrency(data.summary.total_gain_loss); // Using gain as proxy for return value for now, or use total_return %
+                    // Actually summary has total_return_pct
+                    document.getElementById('previewReturn').textContent = data.summary.total_return_pct + '%';
+
+                    // Risk
+                    const vol = data.analytics.risk_metrics.volatility;
+                    document.getElementById('previewRisk').textContent = (vol * 100).toFixed(2) + '%';
+
+                    // Yield
+                    const yieldVal = data.analytics.advanced_risk?.dividend_metrics?.average_yield || 0;
+                    document.getElementById('previewYield').textContent = data.summary.avg_yield ? data.summary.avg_yield + '%' : '-';
+
+                    // Charts
+                    renderBuilderCharts(data);
+
+                    // Risk Stats
+                    renderRiskStats(data);
+                }
+
+                function renderRiskStats(data) {
+                    const riskContainer = document.getElementById('builderRiskStats');
+                    const risk = data.analytics.risk_metrics;
+                    const advRisk = data.analytics.advanced_risk;
+
+                    let riskHTML = '<div class="grid grid-cols-2 gap-4">';
+
+                    // Volatility
+                    riskHTML += `
                     <div class="bg-blue-50 rounded-lg p-3">
                         <div class="text-xs text-blue-600 font-medium mb-1">Portfolio Volatility</div>
                         <div class="text-xl font-bold text-blue-900">${risk.portfolio_volatility || 0}%</div>
                     </div>
                 `;
 
-                // Value at Risk (95%)
-                riskHTML += `
+                    // Value at Risk (95%)
+                    riskHTML += `
                     <div class="bg-red-50 rounded-lg p-3">
                         <div class="text-xs text-red-600 font-medium mb-1">Value at Risk (95%)</div>
                         <div class="text-xl font-bold text-red-900">$${(risk.value_at_risk_95 || 0).toLocaleString()}</div>
                     </div>
                 `;
 
-                // Sharpe Ratio (if available from advanced risk)
-                if (advRisk && advRisk.metrics) {
-                    riskHTML += `
+                    // Sharpe Ratio (if available from advanced risk)
+                    if (advRisk && advRisk.metrics) {
+                        riskHTML += `
                         <div class="bg-green-50 rounded-lg p-3">
                             <div class="text-xs text-green-600 font-medium mb-1">Sharpe Ratio</div>
                             <div class="text-xl font-bold text-green-900">${(advRisk.metrics.sharpe || 0).toFixed(2)}</div>
                         </div>
                     `;
 
-                    // Beta
-                    riskHTML += `
+                        // Beta
+                        riskHTML += `
                         <div class="bg-purple-50 rounded-lg p-3">
                             <div class="text-xs text-purple-600 font-medium mb-1">Beta (vs S&P 500)</div>
                             <div class="text-xl font-bold text-purple-900">${(advRisk.metrics.beta || 0).toFixed(2)}</div>
                         </div>
                     `;
+                    }
+
+                    riskHTML += '</div>';
+                    riskContainer.innerHTML = riskHTML;
                 }
 
-                riskHTML += '</div>';
-                riskContainer.innerHTML = riskHTML;
-            }
+                function renderBuilderCharts(data) {
+                    // Allocation Chart
+                    const allocCtx = document.getElementById('builderAllocationChart').getContext('2d');
+                    if (builderCharts.allocation) builderCharts.allocation.destroy();
 
-            function renderBuilderCharts(data) {
-                // Allocation Chart
-                const allocCtx = document.getElementById('builderAllocationChart').getContext('2d');
-                if (builderCharts.allocation) builderCharts.allocation.destroy();
-
-                const allocData = data.charts.allocation_by_symbol;
-                builderCharts.allocation = new Chart(allocCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: allocData.map(d => d.Symbol),
-                        datasets: [{
-                            data: allocData.map(d => d['Assets (%)']),
-                            backgroundColor: [
-                                '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-                                '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
-                            ]
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { position: 'right' } }
-                    }
-                });
-
-                // Performance Chart (Monte Carlo P50)
-                const perfCtx = document.getElementById('builderPreviewChart').getContext('2d');
-                if (builderCharts.performance) builderCharts.performance.destroy();
-
-                const mcData = data.analytics.advanced_risk?.monte_carlo;
-                if (mcData) {
-                    builderCharts.performance = new Chart(perfCtx, {
-                        type: 'line',
+                    const allocData = data.charts.allocation_by_symbol;
+                    builderCharts.allocation = new Chart(allocCtx, {
+                        type: 'doughnut',
                         data: {
-                            labels: mcData.labels,
+                            labels: allocData.map(d => d.Symbol),
                             datasets: [{
-                                label: 'Projected Value',
-                                data: mcData.p50,
-                                borderColor: '#3b82f6',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                fill: true
+                                data: allocData.map(d => d['Assets (%)']),
+                                backgroundColor: [
+                                    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                                    '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
+                                ]
                             }]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            elements: { point: { radius: 0 } },
-                            scales: {
-                                x: { display: false },
-                                y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } }
-                            }
+                            plugins: { legend: { position: 'right' } }
                         }
                     });
-                }
-            }
 
-            function setupTabs() {
-                const tabs = document.querySelectorAll('.tab-button'); // Updated selector
-                tabs.forEach(tab => {
-                    tab.addEventListener('click', () => {
-                        // Remove active class from all tabs
-                        tabs.forEach(t => {
-                            t.classList.remove('text-blue-600', 'border-blue-600');
-                            t.classList.add('text-gray-500', 'border-transparent');
+                    // Performance Chart (Monte Carlo P50)
+                    const perfCtx = document.getElementById('builderPreviewChart').getContext('2d');
+                    if (builderCharts.performance) builderCharts.performance.destroy();
+
+                    const mcData = data.analytics.advanced_risk?.monte_carlo;
+                    if (mcData) {
+                        builderCharts.performance = new Chart(perfCtx, {
+                            type: 'line',
+                            data: {
+                                labels: mcData.labels,
+                                datasets: [{
+                                    label: 'Projected Value',
+                                    data: mcData.p50,
+                                    borderColor: '#3b82f6',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    fill: true
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                elements: { point: { radius: 0 } },
+                                scales: {
+                                    x: { display: false },
+                                    y: { ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } }
+                                }
+                            }
                         });
+                    }
+                }
 
-                        // Add active class to clicked tab
-                        tab.classList.remove('text-gray-500', 'border-transparent');
-                        tab.classList.add('text-blue-600', 'border-blue-600');
+                function setupTabs() {
+                    const tabs = document.querySelectorAll('.tab-button'); // Updated selector
+                    tabs.forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            // Remove active class from all tabs
+                            tabs.forEach(t => {
+                                t.classList.remove('text-blue-600', 'border-blue-600');
+                                t.classList.add('text-gray-500', 'border-transparent');
+                            });
 
-                        // Hide all content
-                        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                            // Add active class to clicked tab
+                            tab.classList.remove('text-gray-500', 'border-transparent');
+                            tab.classList.add('text-blue-600', 'border-blue-600');
 
-                        // Show target content
-                        const targetId = tab.dataset.tab + '-tab';
-                        document.getElementById(targetId).classList.remove('hidden');
+                            // Hide all content
+                            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+                            // Show target content
+                            const targetId = tab.dataset.tab + '-tab';
+                            document.getElementById(targetId).classList.remove('hidden');
+                        });
                     });
-                });
-            }
+                }
 
-            function setupAnalyticsTabs() {
-                const tabs = document.querySelectorAll('.analytics-tab');
+                function setupAnalyticsTabs() {
+                    const tabs = document.querySelectorAll('.analytics-tab');
 
-                tabs.forEach(tab => {
-                    tab.addEventListener('click', () => {
-                        // Remove active state from all tabs
-                        tabs.forEach(t => {
-                            t.classList.remove('active', 'border-blue-600', 'text-blue-600');
-                            t.classList.add('border-transparent', 'text-gray-500');
+                    tabs.forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            // Remove active state from all tabs
+                            tabs.forEach(t => {
+                                t.classList.remove('active', 'border-blue-600', 'text-blue-600');
+                                t.classList.add('border-transparent', 'text-gray-500');
+                            });
+
+                            // Add active state to clicked tab
+                            tab.classList.add('active', 'border-blue-600', 'text-blue-600');
+                            tab.classList.remove('border-transparent', 'text-gray-500');
+
+                            // Hide all tab contents
+                            document.querySelectorAll('.analytics-tab-content').forEach(content => {
+                                content.classList.add('hidden');
+                            });
+
+                            // Show selected tab content
+                            const tabName = tab.getAttribute('data-tab');
+                            document.getElementById(`tab-${tabName}`).classList.remove('hidden');
                         });
-
-                        // Add active state to clicked tab
-                        tab.classList.add('active', 'border-blue-600', 'text-blue-600');
-                        tab.classList.remove('border-transparent', 'text-gray-500');
-
-                        // Hide all tab contents
-                        document.querySelectorAll('.analytics-tab-content').forEach(content => {
-                            content.classList.add('hidden');
-                        });
-
-                        // Show selected tab content
-                        const tabName = tab.getAttribute('data-tab');
-                        document.getElementById(`tab-${tabName}`).classList.remove('hidden');
                     });
-                });
-            }
-
-            function renderAdvancedAnalytics(analytics) {
-                if (!analytics) return;
-
-                // Risk Metrics
-                if (analytics.risk_metrics) {
-                    document.getElementById('var95').textContent = formatCurrency(analytics.risk_metrics.value_at_risk_95);
-                    document.getElementById('volatility').textContent = analytics.risk_metrics.portfolio_volatility.toFixed(2) + '%';
                 }
 
-                // Diversification
-                if (analytics.diversification) {
-                    document.getElementById('diversificationScore').textContent = Math.round(analytics.diversification.score);
-                    document.getElementById('concentrationRisk').textContent =
-                        `Concentration Risk: ${analytics.diversification.concentration_risk}`;
-                }
+                function renderAdvancedAnalytics(analytics) {
+                    if (!analytics) return;
 
-                // Tax Loss Harvesting
-                if (analytics.tax_loss_harvesting && analytics.tax_loss_harvesting.length > 0) {
-                    const taxList = document.getElementById('taxList');
-                    taxList.innerHTML = analytics.tax_loss_harvesting.slice(0, 5).map(opp => `
+                    // Risk Metrics
+                    if (analytics.risk_metrics) {
+                        document.getElementById('var95').textContent = formatCurrency(analytics.risk_metrics.value_at_risk_95);
+                        document.getElementById('volatility').textContent = analytics.risk_metrics.portfolio_volatility.toFixed(2) + '%';
+                    }
+
+                    // Diversification
+                    if (analytics.diversification) {
+                        document.getElementById('diversificationScore').textContent = Math.round(analytics.diversification.score);
+                        document.getElementById('concentrationRisk').textContent =
+                            `Concentration Risk: ${analytics.diversification.concentration_risk}`;
+                    }
+
+                    // Tax Loss Harvesting
+                    if (analytics.tax_loss_harvesting && analytics.tax_loss_harvesting.length > 0) {
+                        const taxList = document.getElementById('taxList');
+                        taxList.innerHTML = analytics.tax_loss_harvesting.slice(0, 5).map(opp => `
                     <div class="mb-2">
                         <strong>${opp.symbol}</strong>: ${formatCurrency(opp.current_loss)} loss 
                         (Est. tax benefit: ${formatCurrency(opp.estimated_tax_benefit)})
                     </div>
                 `).join('');
-                }
+                    }
 
-                // Sector Allocation Chart
-                if (analytics.sector_allocation && analytics.sector_allocation.sectors) {
-                    renderSectorChart(analytics.sector_allocation.sectors);
-                }
+                    // Sector Allocation Chart
+                    if (analytics.sector_allocation && analytics.sector_allocation.sectors) {
+                        renderSectorChart(analytics.sector_allocation.sectors);
+                    }
 
-                // Dividend Metrics
-                if (analytics.dividend_metrics) {
-                    document.getElementById('monthlyIncome').textContent = formatCurrency(analytics.dividend_metrics.monthly_income);
-                    document.getElementById('quarterlyIncome').textContent = formatCurrency(analytics.dividend_metrics.quarterly_income);
-                    document.getElementById('dividendCount').textContent = analytics.dividend_metrics.dividend_stocks_count;
+                    // Dividend Metrics
+                    if (analytics.dividend_metrics) {
+                        document.getElementById('monthlyIncome').textContent = formatCurrency(analytics.dividend_metrics.monthly_income);
+                        document.getElementById('quarterlyIncome').textContent = formatCurrency(analytics.dividend_metrics.quarterly_income);
+                        document.getElementById('dividendCount').textContent = analytics.dividend_metrics.dividend_stocks_count;
 
-                    if (analytics.dividend_metrics.top_dividend_payers) {
-                        renderTopDividendPayers(analytics.dividend_metrics.top_dividend_payers);
+                        if (analytics.dividend_metrics.top_dividend_payers) {
+                            renderTopDividendPayers(analytics.dividend_metrics.top_dividend_payers);
+                        }
+                    }
+
+                    // Performance Scatter Plot
+                    if (analytics.performance_vs_weight) {
+                        renderPerformanceScatter(analytics.performance_vs_weight);
+                    }
+
+                    // Advanced Risk Analytics
+                    if (analytics.advanced_risk) {
+                        if (analytics.advanced_risk.monte_carlo) {
+                            renderMonteCarloChart(analytics.advanced_risk.monte_carlo);
+                        }
+                        if (analytics.advanced_risk.correlation_matrix) {
+                            renderCorrelationMatrix(analytics.advanced_risk.correlation_matrix);
+                        }
                     }
                 }
 
-                // Performance Scatter Plot
-                if (analytics.performance_vs_weight) {
-                    renderPerformanceScatter(analytics.performance_vs_weight);
-                }
+                function renderMonteCarloChart(data) {
+                    const ctx = document.getElementById('monteCarloChart').getContext('2d');
 
-                // Advanced Risk Analytics
-                if (analytics.advanced_risk) {
-                    if (analytics.advanced_risk.monte_carlo) {
-                        renderMonteCarloChart(analytics.advanced_risk.monte_carlo);
+                    if (charts.monteCarlo) {
+                        charts.monteCarlo.destroy();
                     }
-                    if (analytics.advanced_risk.correlation_matrix) {
-                        renderCorrelationMatrix(analytics.advanced_risk.correlation_matrix);
-                    }
-                }
-            }
 
-            function renderMonteCarloChart(data) {
-                const ctx = document.getElementById('monteCarloChart').getContext('2d');
-
-                if (charts.monteCarlo) {
-                    charts.monteCarlo.destroy();
-                }
-
-                charts.monteCarlo = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            {
-                                label: '90th Percentile (Best Case)',
-                                data: data.p90,
-                                borderColor: 'rgba(16, 185, 129, 1)', // Green
-                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                borderWidth: 1,
-                                fill: false,
-                                pointRadius: 0
-                            },
-                            {
-                                label: '50th Percentile (Median)',
-                                data: data.p50,
-                                borderColor: 'rgba(59, 130, 246, 1)', // Blue
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                borderWidth: 2,
-                                fill: false,
-                                pointRadius: 0
-                            },
-                            {
-                                label: '10th Percentile (Worst Case)',
-                                data: data.p10,
-                                borderColor: 'rgba(239, 68, 68, 1)', // Red
-                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                                borderWidth: 1,
-                                fill: false,
-                                pointRadius: 0
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: {
-                            intersect: false,
-                            mode: 'index',
+                    charts.monteCarlo = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                {
+                                    label: '90th Percentile (Best Case)',
+                                    data: data.p90,
+                                    borderColor: 'rgba(16, 185, 129, 1)', // Green
+                                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                    borderWidth: 1,
+                                    fill: false,
+                                    pointRadius: 0
+                                },
+                                {
+                                    label: '50th Percentile (Median)',
+                                    data: data.p50,
+                                    borderColor: 'rgba(59, 130, 246, 1)', // Blue
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    borderWidth: 2,
+                                    fill: false,
+                                    pointRadius: 0
+                                },
+                                {
+                                    label: '10th Percentile (Worst Case)',
+                                    data: data.p10,
+                                    borderColor: 'rgba(239, 68, 68, 1)', // Red
+                                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                    borderWidth: 1,
+                                    fill: false,
+                                    pointRadius: 0
+                                }
+                            ]
                         },
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function (context) {
-                                        return context.dataset.label + ': ' + formatCurrency(context.raw);
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                intersect: false,
+                                mode: 'index',
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            return context.dataset.label + ': ' + formatCurrency(context.raw);
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    title: { display: true, text: 'Trading Days' },
+                                    grid: { display: false }
+                                },
+                                y: {
+                                    title: { display: true, text: 'Portfolio Value ($)' },
+                                    ticks: {
+                                        callback: function (value) { return '$' + (value / 1000).toFixed(0) + 'k'; }
                                     }
                                 }
                             }
-                        },
-                        scales: {
-                            x: {
-                                title: { display: true, text: 'Trading Days' },
-                                grid: { display: false }
-                            },
-                            y: {
-                                title: { display: true, text: 'Portfolio Value ($)' },
-                                ticks: {
-                                    callback: function (value) { return '$' + (value / 1000).toFixed(0) + 'k'; }
-                                }
-                            }
                         }
-                    }
-                });
+                    });
 
-                // Update stats
-                const startVal = data.start_value;
-                const endP50 = data.p50[data.p50.length - 1];
-                const returnP50 = ((endP50 - startVal) / startVal * 100).toFixed(1);
+                    // Update stats
+                    const startVal = data.start_value;
+                    const endP50 = data.p50[data.p50.length - 1];
+                    const returnP50 = ((endP50 - startVal) / startVal * 100).toFixed(1);
 
-                const statsHtml = `
+                    const statsHtml = `
                 <div class="bg-gray-50 p-2 rounded">
                     <div class="text-xs text-gray-500">Start Value</div>
                     <div class="font-bold">${formatCurrency(startVal)}</div>
@@ -3166,141 +3178,141 @@
                     <div class="font-bold text-blue-700">${returnP50}%</div>
                 </div>
             `;
-                document.getElementById('monteCarloStats').innerHTML = statsHtml;
-            }
-
-            function renderCorrelationMatrix(data) {
-                const container = document.getElementById('correlationMatrix');
-                const labels = data.labels;
-                const values = data.values;
-
-                let html = '<table class="w-full text-xs border-collapse">';
-
-                // Header row
-                html += '<thead><tr><th class="p-1"></th>';
-                labels.forEach(label => {
-                    html += `<th class="p-1 font-bold text-gray-600 rotate-45 origin-bottom-left h-20 align-bottom">${label}</th>`;
-                });
-                html += '</tr></thead><tbody>';
-
-                // Data rows
-                values.forEach((row, i) => {
-                    html += `<tr><th class="p-1 font-bold text-gray-600 text-right pr-2">${labels[i]}</th>`;
-                    row.forEach(val => {
-                        // Color scale: -1 (blue) to 0 (white) to 1 (red)
-                        let bgColor;
-                        if (val >= 0) {
-                            // Red scale for positive correlation
-                            const intensity = Math.round(val * 255);
-                            bgColor = `rgba(239, 68, 68, ${val * 0.8})`; // Red with opacity
-                        } else {
-                            // Blue scale for negative correlation
-                            const intensity = Math.round(Math.abs(val) * 255);
-                            bgColor = `rgba(59, 130, 246, ${Math.abs(val) * 0.8})`; // Blue with opacity
-                        }
-
-                        const textColor = Math.abs(val) > 0.5 ? 'white' : 'black';
-
-                        html += `<td class="p-2 text-center border border-gray-100" style="background-color: ${bgColor}; color: ${textColor}">
-                        ${val.toFixed(2)}
-                    </td>`;
-                    });
-                    html += '</tr>';
-                });
-
-                html += '</tbody></table>';
-                container.innerHTML = html;
-            }
-
-            function renderPerformanceScatter(data) {
-                const ctx = document.getElementById('performanceScatterChart').getContext('2d');
-
-                // Destroy existing chart if it exists
-                if (charts.performanceScatter) {
-                    charts.performanceScatter.destroy();
+                    document.getElementById('monteCarloStats').innerHTML = statsHtml;
                 }
 
-                const points = data.points.map(p => ({
-                    x: p['Assets (%)'],
-                    y: p['Total Return (%)'],
-                    symbol: p.Symbol
-                }));
+                function renderCorrelationMatrix(data) {
+                    const container = document.getElementById('correlationMatrix');
+                    const labels = data.labels;
+                    const values = data.values;
 
-                const trendline = data.trendline ? data.trendline : [];
+                    let html = '<table class="w-full text-xs border-collapse">';
 
-                charts.performanceScatter = new Chart(ctx, {
-                    type: 'scatter',
-                    data: {
-                        datasets: [{
-                            label: 'Holdings',
-                            data: points,
-                            backgroundColor: 'rgba(37, 99, 235, 0.6)',
-                            borderColor: 'rgba(37, 99, 235, 1)',
-                            borderWidth: 1,
-                            pointRadius: 6,
-                            pointHoverRadius: 8
-                        }, {
-                            type: 'line',
-                            label: 'Trend Line',
-                            data: trendline,
-                            borderColor: 'rgba(107, 114, 128, 0.8)',
-                            borderWidth: 2,
-                            borderDash: [5, 5],
-                            fill: false,
-                            pointRadius: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function (context) {
-                                        const point = context.raw;
-                                        if (context.dataset.type === 'line') return null;
-                                        return `${point.symbol}: Weight ${point.x.toFixed(2)}%, Return ${point.y.toFixed(2)}%`;
-                                    }
-                                }
-                            },
-                            annotation: {
-                                annotations: {
-                                    line1: {
-                                        type: 'line',
-                                        yMin: 0,
-                                        yMax: 0,
-                                        borderColor: 'rgba(0,0,0,0.2)',
-                                        borderWidth: 1
-                                    }
-                                }
+                    // Header row
+                    html += '<thead><tr><th class="p-1"></th>';
+                    labels.forEach(label => {
+                        html += `<th class="p-1 font-bold text-gray-600 rotate-45 origin-bottom-left h-20 align-bottom">${label}</th>`;
+                    });
+                    html += '</tr></thead><tbody>';
+
+                    // Data rows
+                    values.forEach((row, i) => {
+                        html += `<tr><th class="p-1 font-bold text-gray-600 text-right pr-2">${labels[i]}</th>`;
+                        row.forEach(val => {
+                            // Color scale: -1 (blue) to 0 (white) to 1 (red)
+                            let bgColor;
+                            if (val >= 0) {
+                                // Red scale for positive correlation
+                                const intensity = Math.round(val * 255);
+                                bgColor = `rgba(239, 68, 68, ${val * 0.8})`; // Red with opacity
+                            } else {
+                                // Blue scale for negative correlation
+                                const intensity = Math.round(Math.abs(val) * 255);
+                                bgColor = `rgba(59, 130, 246, ${Math.abs(val) * 0.8})`; // Blue with opacity
                             }
+
+                            const textColor = Math.abs(val) > 0.5 ? 'white' : 'black';
+
+                            html += `<td class="p-2 text-center border border-gray-100" style="background-color: ${bgColor}; color: ${textColor}">
+                        ${val.toFixed(2)}
+                    </td>`;
+                        });
+                        html += '</tr>';
+                    });
+
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                }
+
+                function renderPerformanceScatter(data) {
+                    const ctx = document.getElementById('performanceScatterChart').getContext('2d');
+
+                    // Destroy existing chart if it exists
+                    if (charts.performanceScatter) {
+                        charts.performanceScatter.destroy();
+                    }
+
+                    const points = data.points.map(p => ({
+                        x: p['Assets (%)'],
+                        y: p['Total Return (%)'],
+                        symbol: p.Symbol
+                    }));
+
+                    const trendline = data.trendline ? data.trendline : [];
+
+                    charts.performanceScatter = new Chart(ctx, {
+                        type: 'scatter',
+                        data: {
+                            datasets: [{
+                                label: 'Holdings',
+                                data: points,
+                                backgroundColor: 'rgba(37, 99, 235, 0.6)',
+                                borderColor: 'rgba(37, 99, 235, 1)',
+                                borderWidth: 1,
+                                pointRadius: 6,
+                                pointHoverRadius: 8
+                            }, {
+                                type: 'line',
+                                label: 'Trend Line',
+                                data: trendline,
+                                borderColor: 'rgba(107, 114, 128, 0.8)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                fill: false,
+                                pointRadius: 0
+                            }]
                         },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: 'Portfolio Weight (%)'
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            const point = context.raw;
+                                            if (context.dataset.type === 'line') return null;
+                                            return `${point.symbol}: Weight ${point.x.toFixed(2)}%, Return ${point.y.toFixed(2)}%`;
+                                        }
+                                    }
                                 },
-                                grid: {
-                                    display: false
+                                annotation: {
+                                    annotations: {
+                                        line1: {
+                                            type: 'line',
+                                            yMin: 0,
+                                            yMax: 0,
+                                            borderColor: 'rgba(0,0,0,0.2)',
+                                            borderWidth: 1
+                                        }
+                                    }
                                 }
                             },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: 'Total Return (%)'
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Portfolio Weight (%)'
+                                    },
+                                    grid: {
+                                        display: false
+                                    }
                                 },
-                                grid: {
-                                    color: 'rgba(0, 0, 0, 0.05)'
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Total Return (%)'
+                                    },
+                                    grid: {
+                                        color: 'rgba(0, 0, 0, 0.05)'
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
 
-                // Update stats
-                if (data.stats) {
-                    const statsHtml = `
+                    // Update stats
+                    if (data.stats) {
+                        const statsHtml = `
                     <div class="bg-blue-50 p-3 rounded-lg">
                         <div class="text-xs text-gray-500 uppercase">Slope</div>
                         <div class="text-lg font-bold text-blue-700">${data.stats.slope}</div>
@@ -3314,48 +3326,48 @@
                         <div class="text-lg font-bold text-purple-700">${data.stats.intercept}</div>
                     </div>
                 `;
-                    document.getElementById('performanceStats').innerHTML = statsHtml;
-                }
-            }
-
-            function renderSectorChart(sectors) {
-                const ctx = document.getElementById('sectorAllocationChart').getContext('2d');
-
-                if (charts.sectorAllocation) {
-                    charts.sectorAllocation.destroy();
+                        document.getElementById('performanceStats').innerHTML = statsHtml;
+                    }
                 }
 
-                charts.sectorAllocation = new Chart(ctx, {
-                    type: 'pie',
-                    data: {
-                        labels: sectors.map(s => s['Asset Type']),
-                        datasets: [{
-                            data: sectors.map(s => s['Value ($)']),
-                            backgroundColor: generateColors(sectors.length)
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right' },
-                            tooltip: {
-                                callbacks: {
-                                    label: (context) => {
-                                        const label = context.label || '';
-                                        const value = formatCurrency(context.parsed);
-                                        return `${label}: ${value}`;
+                function renderSectorChart(sectors) {
+                    const ctx = document.getElementById('sectorAllocationChart').getContext('2d');
+
+                    if (charts.sectorAllocation) {
+                        charts.sectorAllocation.destroy();
+                    }
+
+                    charts.sectorAllocation = new Chart(ctx, {
+                        type: 'pie',
+                        data: {
+                            labels: sectors.map(s => s['Asset Type']),
+                            datasets: [{
+                                data: sectors.map(s => s['Value ($)']),
+                                backgroundColor: generateColors(sectors.length)
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'right' },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (context) => {
+                                            const label = context.label || '';
+                                            const value = formatCurrency(context.parsed);
+                                            return `${label}: ${value}`;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                });
-            }
+                    });
+                }
 
-            function renderTopDividendPayers(payers) {
-                const container = document.getElementById('topDividendPayers');
-                container.innerHTML = `
+                function renderTopDividendPayers(payers) {
+                    const container = document.getElementById('topDividendPayers');
+                    container.innerHTML = `
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
@@ -3377,75 +3389,75 @@
                     </tbody>
                 </table>
             `;
-            }
-
-
-            async function handleAddAsset(e) {
-                e.preventDefault();
-                if (!currentPortfolioId) {
-                    alert('No portfolio loaded. Please save or load a portfolio first.');
-                    return;
                 }
 
-                const type = document.getElementById('assetTypeInput').value;
-                const ticker = document.getElementById('assetTickerInput').value;
-                const qty = parseFloat(document.getElementById('assetQtyInput').value);
-                const price = parseFloat(document.getElementById('assetPriceInput').value);
-                const cost = parseFloat(document.getElementById('assetCostInput').value) || (qty * price);
 
-                const payload = {
-                    ticker: ticker,
-                    quantity: qty,
-                    price: price,
-                    cost_basis: cost,
-                    asset_type: type,
-                    currency: 'USD',
-                    metadata: { added_manually: true }
-                };
+                async function handleAddAsset(e) {
+                    e.preventDefault();
+                    if (!currentPortfolioId) {
+                        alert('No portfolio loaded. Please save or load a portfolio first.');
+                        return;
+                    }
 
-                try {
-                    const res = await fetch(`${API_URL}/api/v2/portfolio/${currentPortfolioId}/holdings`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                    const type = document.getElementById('assetTypeInput').value;
+                    const ticker = document.getElementById('assetTickerInput').value;
+                    const qty = parseFloat(document.getElementById('assetQtyInput').value);
+                    const price = parseFloat(document.getElementById('assetPriceInput').value);
+                    const cost = parseFloat(document.getElementById('assetCostInput').value) || (qty * price);
 
-                    if (!res.ok) throw new Error('Failed to add asset');
+                    const payload = {
+                        ticker: ticker,
+                        quantity: qty,
+                        price: price,
+                        cost_basis: cost,
+                        asset_type: type,
+                        currency: 'USD',
+                        metadata: { added_manually: true }
+                    };
 
-                    // Success
-                    document.getElementById('addAssetModal').classList.add('hidden');
-                    document.getElementById('addAssetForm').reset();
+                    try {
+                        const res = await fetch(`${API_URL}/api/v2/portfolio/${currentPortfolioId}/holdings`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
 
-                    // Reload portfolio
-                    await loadPortfolio(currentPortfolioId, false); // Don't fetch live prices immediately to be faster
-                    updateWealthMetrics(); // Refresh wealth cards too
+                        if (!res.ok) throw new Error('Failed to add asset');
 
-                } catch (err) {
-                    alert('Error adding asset: ' + err.message);
+                        // Success
+                        document.getElementById('addAssetModal').classList.add('hidden');
+                        document.getElementById('addAssetForm').reset();
+
+                        // Reload portfolio
+                        await loadPortfolio(currentPortfolioId, false); // Don't fetch live prices immediately to be faster
+                        updateWealthMetrics(); // Refresh wealth cards too
+
+                    } catch (err) {
+                        alert('Error adding asset: ' + err.message);
+                    }
                 }
-            }
 
-            // Utility functions
-            function formatCurrency(value) {
-                return new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: 'USD',
-                    minimumFractionDigits: 2
-                }).format(value);
-            }
-
-            function generateColors(count) {
-                const colors = [
-                    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-                    '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
-                ];
-
-                const result = [];
-                for (let i = 0; i < count; i++) {
-                    result.push(colors[i % colors.length]);
+                // Utility functions
+                function formatCurrency(value) {
+                    return new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                        minimumFractionDigits: 2
+                    }).format(value);
                 }
-                return result;
-            }
+
+                function generateColors(count) {
+                    const colors = [
+                        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                        '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
+                    ];
+
+                    const result = [];
+                    for (let i = 0; i < count; i++) {
+                        result.push(colors[i % colors.length]);
+                    }
+                    return result;
+                }
         </script>
 </body>
 
