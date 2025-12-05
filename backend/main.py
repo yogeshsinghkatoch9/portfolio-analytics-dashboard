@@ -3,11 +3,13 @@ Portfolio Visualization Platform - Backend API
 FastAPI server for processing portfolio CSV/Excel files and generating analytics
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -25,7 +27,64 @@ import wealth_api
 import watchlist_api
 import news_api
 import ai_api
+import ai_api
 import os
+import zipfile
+import shutil
+from latex_generator import LatexReportGenerator
+
+# Import new authentication modules
+try:
+    from database import get_db, engine, Base
+    from models import User, Portfolio, Holding, UserRole
+    from auth import (
+        get_password_hash,
+        verify_password,
+        create_access_token,
+        get_current_user,
+        get_current_active_user,
+        require_role
+    )
+    AUTH_ENABLED = True
+except ImportError as e:
+    print(f"Warning: Auth modules not available: {e}")
+    AUTH_ENABLED = False
+
+from ai_service import AIService
+from benchmark import BenchmarkService
+
+
+# Pydantic schemas for authentication
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+    role: Optional[str] = "client"
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str]
+    role: str
+    
+    class Config:
+        from_attributes = True
+
+
+import goals_api
+import reports_api
+import export_api
 
 app = FastAPI(title="Portfolio Analytics API", version="2.0.0")
 
@@ -35,15 +94,98 @@ app.include_router(wealth_api.router, prefix='/api/v2')
 app.include_router(watchlist_api.router, prefix='/api/v2')
 app.include_router(news_api.router, prefix='/api/v2')
 app.include_router(ai_api.router, prefix='/api/v2')
+app.include_router(goals_api.router, prefix='/api/v2')
+app.include_router(reports_api.router, prefix='/api/v2')
+app.include_router(export_api.router, prefix='/api/v2')
 
 
 @app.on_event("startup")
 async def startup_event():
-    # Initialize database
+    # Initialize existing database
     try:
         db_module.init_db()
     except Exception:
         pass
+    
+    # Initialize new auth database
+    if AUTH_ENABLED:
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("✅ Database tables created successfully")
+        except Exception as e:
+            print(f"⚠️  Database initialization failed: {e}")
+
+
+# ========================================
+# AUTHENTICATION ENDPOINTS
+# ========================================
+
+@app.post("/auth/register", response_model=UserResponse, tags=["Authentication"])
+async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+    """Register a new user"""
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=503, detail="Authentication not configured")
+    
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Validate role
+    if user_data.role not in ["client", "advisor"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'client' or 'advisor'")
+    
+    # Create new user
+    hashed_password = get_password_hash(user_data.password)
+    new_user = User(
+        email=user_data.email,
+        password_hash=hashed_password,
+        full_name=user_data.full_name,
+        role=UserRole(user_data.role)
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return new_user
+
+
+@app.post("/auth/login", response_model=Token, tags=["Authentication"])
+async def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    """Login and receive JWT access token"""
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=503, detail="Authentication not configured")
+    
+    # Find user
+    user = db.query(User).filter(User.email == user_data.email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Verify password
+    if not verify_password(user_data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user.email})
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/auth/me", response_model=UserResponse, tags=["Authentication"])
+async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
+    """Get current user information"""
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=503, detail="Authentication not configured")
+    
+    return current_user
+
+
+@app.post("/auth/logout", tags=["Authentication"])
+async def logout():
+    """Logout (handled client-side by removing token)"""
+    return {"message": "Logged out successfully"}
+
 
 # Cache for real-time quotes (5 minute TTL)
 quote_cache = {}
@@ -117,6 +259,7 @@ def clean_numeric_value(value: Any) -> float:
         return 0.0
 
 
+
 def parse_portfolio_file(file_content: bytes, filename: str) -> pd.DataFrame:
     """Parse CSV or Excel file and validate structure"""
     try:
@@ -128,12 +271,16 @@ def parse_portfolio_file(file_content: bytes, filename: str) -> pd.DataFrame:
         else:
             raise ValueError("File must be CSV or Excel format")
         
-        # Validate critical columns exist
-        critical_columns = ['Symbol', 'Quantity', 'Price ($)', 'Value ($)']
+        # Normalize column names (strip whitespace, etc)
+        df.columns = df.columns.str.strip()
+        
+        # Validate critical columns exist - Relaxed to just Symbol and Quantity
+        # We can fetch Price, and Calculate Value
+        critical_columns = ['Symbol', 'Quantity']
         missing_critical = [col for col in critical_columns if col not in df.columns]
         
         if missing_critical:
-            raise ValueError(f"Missing critical columns: {', '.join(missing_critical)}")
+            raise ValueError(f"Missing critical columns: {', '.join(missing_critical)}. File must at least have Symbol and Quantity.")
         
         return df
     
@@ -142,10 +289,26 @@ def parse_portfolio_file(file_content: bytes, filename: str) -> pd.DataFrame:
 
 
 def clean_portfolio_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and normalize portfolio data"""
-    # Remove header rows (rows where Symbol is NaN and Description contains account info)
+    """Clean and normalize portfolio data, fetching missing info if needed"""
+    # Remove header rows (rows where Symbol is NaN)
     df = df[df['Symbol'].notna()].copy()
     
+    # Ensure standard columns exist with defaults
+    if 'Description' not in df.columns:
+        df['Description'] = ''
+        
+    if 'Asset Type' not in df.columns:
+        df['Asset Type'] = 'Stock'
+
+    if 'Asset Category' not in df.columns:
+        df['Asset Category'] = df['Asset Type']
+        
+    if 'Price ($)' not in df.columns:
+        df['Price ($)'] = 0.0
+        
+    if 'Value ($)' not in df.columns:
+        df['Value ($)'] = 0.0
+        
     # Clean numeric columns
     numeric_columns = [
         'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
@@ -156,19 +319,46 @@ def clean_portfolio_data(df: pd.DataFrame) -> pd.DataFrame:
     ]
     
     for col in numeric_columns:
-        if col in df.columns:
+        if col not in df.columns:
+            df[col] = 0.0
+        else:
             df[col] = df[col].apply(clean_numeric_value)
+
+    # 1. Fetch Missing Prices (if Price is 0 but Symbol exists)
+    rows_needing_price = df[(df['Price ($)'] == 0) & (df['Symbol'].str.len() > 0)]
+    if not rows_needing_price.empty:
+        # Optimization: Fetch in batch if possible, for now simple loop or yfinance batch
+        symbols = rows_needing_price['Symbol'].unique().tolist()
+        # Clean symbols
+        symbols = [s for s in symbols if isinstance(s, str)]
+        
+        if symbols:
+            try:
+                # Limit to prevent long waits on huge files
+                if len(symbols) <= 50:
+                    tickers = yf.Tickers(' '.join(symbols))
+                    for sym in symbols:
+                        try:
+                            # Try to get fast price
+                            info = tickers.tickers[sym].info
+                            price = info.get('regularMarketPrice', info.get('currentPrice', info.get('previousClose', 0.0)))
+                            if price:
+                                df.loc[df['Symbol'] == sym, 'Price ($)'] = price
+                        except Exception:
+                            pass # Keep as 0 if fetch fails
+            except Exception as e:
+                print(f"Failed to auto-fetch prices: {e}")
+
+    # 2. Compute missing Values (Pro-rate)
+    # Value = Quantity * Price
+    df['Value ($)'] = df.apply(
+        lambda row: (row['Quantity'] * row['Price ($)']) 
+        if (row['Value ($)'] == 0 and row['Quantity'] > 0 and row['Price ($)'] > 0)
+        else row['Value ($)'], 
+        axis=1
+    )
     
-    # Compute missing Values if needed
-    if 'Value ($)' in df.columns:
-        df['Value ($)'] = df.apply(
-            lambda row: row['Quantity'] * row['Price ($)'] 
-            if row['Value ($)'] == 0 and row['Quantity'] > 0 
-            else row['Value ($)'], 
-            axis=1
-        )
-    
-    # Compute missing Assets % if needed
+    # 3. Compute missing Assets %
     total_value = df['Value ($)'].sum()
     if total_value > 0:
         df['Assets (%)'] = df.apply(
@@ -268,13 +458,33 @@ def generate_chart_data(df: pd.DataFrame, fast_mode: bool = False) -> Dict[str, 
         ['Symbol', 'Current Yld/Dist Rate (%)', 'Est Annual Income ($)']
     ].to_dict('records')
     
+    
+    # 7. Benchmark Comparison (S&P 500)
+    # Fetch 1-year S&P 500 data
+    benchmark_data = BenchmarkService.get_sp500_data(period="1y")
+    
     return {
         'allocation_by_symbol': allocation_by_symbol,
         'allocation_by_type': allocation_by_type,
         'allocation_by_category': allocation_by_category,
         'gain_loss_by_symbol': gain_loss_by_symbol,
         'daily_movement': daily_movement,
-        'yield_distribution': yield_distribution
+        'yield_distribution': yield_distribution,
+        'benchmark_comparison': benchmark_data
+    }
+    
+    # 7. Benchmark Comparison (S&P 500)
+    # Fetch 1-year S&P 500 data
+    benchmark_data = BenchmarkService.get_sp500_data(period="1y")
+    
+    return {
+        'allocation_by_symbol': allocation_by_symbol,
+        'allocation_by_type': allocation_by_type,
+        'allocation_by_category': allocation_by_category,
+        'gain_loss_by_symbol': gain_loss_by_symbol,
+        'daily_movement': daily_movement,
+        'yield_distribution': yield_distribution,
+        'benchmark_comparison': benchmark_data
     }
 
 
@@ -634,6 +844,7 @@ async def risk_assessment_info():
     }
 
 
+
 @app.post("/api/portfolio/export-pdf")
 async def export_portfolio_pdf(
     file: UploadFile = File(None),
@@ -643,13 +854,15 @@ async def export_portfolio_pdf(
 ):
     """
     Generate and download professional PDF portfolio report
+    Tries Latex first, falls back to Python-native PDF if Latex is missing
+    Bundles both in a ZIP if compilation fails
     """
     try:
         import pdf_generator
         import tempfile
         from fastapi.responses import FileResponse
         
-        # If a portfolio_id is provided, generate report from DB
+        # Prepare Data (Common Logic)
         if portfolio_id:
             # Load portfolio from DB
             session = next(db_module.get_session())
@@ -672,59 +885,7 @@ async def export_portfolio_pdf(
                     'Principal ($)*': h.cost_basis or 0
                 })
             df = pd.DataFrame(rows)
-
-            # Compute assets %
-            total_value = df['Value ($)'].sum() if not df.empty else 0
-            if total_value > 0:
-                df['Assets (%)'] = df['Value ($)'] / total_value * 100
-
-            # Ensure numeric columns exist to avoid KeyErrors in analytics/pdf generator
-            required_numeric = [
-                'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
-                '1-Day Value Change ($)', '1-Day Price Change (%)',
-                'Principal ($)*', 'Principal G/L ($)*', 'Principal G/L (%)',
-                'NFS Cost ($)', 'NFS G/L ($)', 'NFS G/L (%)',
-                'Est Annual Income ($)', 'Current Yld/Dist Rate (%)', 'Est Tax G/L ($)*'
-            ]
-            for col in required_numeric:
-                if col not in df.columns:
-                    df[col] = 0
-
-            # Convert numerics safely
-            for col in required_numeric:
-                try:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                except Exception:
-                    df[col] = 0
-
-            # Create temporary PDF file
-            temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-            temp_pdf_path = temp_pdf.name
-            temp_pdf.close()
-
-            # Use pdf_generator.generate_portfolio_pdf directly
-            summary = compute_summary_metrics(df)
-            charts = generate_chart_data(df)
-            holdings = prepare_holdings_table(df)
-
-            portfolio_data = {'summary': summary, 'charts': charts, 'holdings': holdings}
-
-            # Analytics
-            try:
-                risk_metrics = analytics.calculate_risk_metrics(df)
-                diversification = analytics.calculate_diversification_score(df)
-                tax_loss_harvesting = analytics.identify_tax_loss_harvesting(df)
-                dividend_metrics = analytics.calculate_dividend_metrics(df)
-                analytics_data = {
-                    'risk_metrics': risk_metrics,
-                    'diversification': diversification,
-                    'tax_loss_harvesting': tax_loss_harvesting,
-                    'dividend_metrics': dividend_metrics
-                }
-            except Exception:
-                analytics_data = {}
-
-            pdf_path = pdf_generator.generate_portfolio_pdf(portfolio_data, analytics_data, temp_pdf_path, client_name or p.name)
+            client_display_name = client_name or p.name
 
         else:
             if file is None:
@@ -732,40 +893,146 @@ async def export_portfolio_pdf(
 
             # Read file content
             content = await file.read()
+            df = parse_portfolio_file(content, file.filename)
+            client_display_name = client_name or 'Portfolio Report'
 
-            # Create temporary PDF file
-            temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-            temp_pdf_path = temp_pdf.name
-            temp_pdf.close()
-
-            # Generate PDF report from upload (passes client_name)
-            pdf_path = pdf_generator.generate_pdf_from_upload(
-                content,
-                file.filename,
-                temp_pdf_path,
-                client_name=client_name or 'Portfolio Report'
-            )
+        # Common Data Cleaning
+        df = clean_portfolio_data(df)
         
-        # Clean up temp file
-        if background_tasks is not None:
-            background_tasks.add_task(os.unlink, pdf_path)
-        else:
+        # Ensure numeric columns exist
+        required_numeric = [
+            'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
+            '1-Day Value Change ($)', '1-Day Price Change (%)',
+            'Principal ($)*', 'Principal G/L ($)*', 'Principal G/L (%)*',
+            'NFS Cost ($)', 'NFS G/L ($)', 'NFS G/L (%)',
+            'Est Annual Income ($)', 'Current Yld/Dist Rate (%)', 'Est Tax G/L ($)*'
+        ]
+        for col in required_numeric:
+            if col not in df.columns:
+                df[col] = 0
+                
+        for col in required_numeric:
             try:
-                os.unlink(pdf_path)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             except Exception:
-                pass
+                df[col] = 0
+
+        # Compute Metrics
+        summary = compute_summary_metrics(df)
+        charts = generate_chart_data(df)
+        holdings = prepare_holdings_table(df)
+
+        portfolio_data = {'summary': summary, 'charts': charts, 'holdings': holdings}
+
+        # Analytics
+        try:
+            risk_metrics = analytics.calculate_risk_metrics(df)
+            diversification = analytics.calculate_diversification_score(df)
+            tax_loss_harvesting = analytics.identify_tax_loss_harvesting(df)
+            dividend_metrics = analytics.calculate_dividend_metrics(df)
+            analytics_data = {
+                'risk_metrics': risk_metrics,
+                'diversification': diversification,
+                'tax_loss_harvesting': tax_loss_harvesting,
+                'dividend_metrics': dividend_metrics
+            }
+        except Exception:
+            analytics_data = {}
+
+        # 1. Generate Fallback PDF (Standard ReportLab)
+        # We always generate this because it's reliable
+        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        fallback_pdf_path = temp_pdf.name
+        temp_pdf.close()
         
-        return FileResponse(
-            pdf_path, 
-            media_type='application/pdf', 
-            filename=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d')}.pdf"
-        )
+        pdf_generator.generate_portfolio_pdf(portfolio_data, analytics_data, fallback_pdf_path, client_name=client_display_name)
+
+        # 2. Try Latex Generation
+        latex_gen = LatexReportGenerator()
+        success, latex_result, build_dir = latex_gen.generate_report(portfolio_data, analytics_data, "unused.pdf", client_name=client_display_name)
+
+        # Decision Logic
+        if success:
+            # If Latex worked (someone installed pdflatex), give them the PDF directly
+            # Cleanup fallback
+            os.unlink(fallback_pdf_path)
+            shutil.rmtree(build_dir, ignore_errors=True)
+            
+            return FileResponse(
+                latex_result, 
+                media_type='application/pdf', 
+                filename=f"Portfolio_Report_Pro_{datetime.now().strftime('%Y%m%d')}.pdf"
+            )
+        else:
+            # Compilation failed (expected on minimal envs)
+            # Create a ZIP containing:
+            # 1. Fallback PDF (renamed to Portfolio_Report.pdf)
+            # 2. Source Folder (containing .tex and images)
+            # 3. README explaining why
+            
+            zip_filename = f"Portfolio_Report_Bundle_{datetime.now().strftime('%Y%m%d')}.zip"
+            temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+            zip_path = temp_zip.name
+            temp_zip.close()
+
+            with zipfile.ZipFile(zip_path, 'w') as zf:
+                # Add Fallback PDF
+                zf.write(fallback_pdf_path, "Portfolio_Report_QuickView.pdf")
+                
+                # Add Latex Source
+                tex_source_name = "latex_source"
+                # Walk the build dir which contains .tex and .pngs
+                for root, dirs, files in os.walk(build_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # Archive path: latex_source/filename
+                        arcname = os.path.join(tex_source_name, file)
+                        zf.write(file_path, arcname)
+                
+                # Add README
+                readme_content = """
+VisionWealth Portfolio Report Bundle
+====================================
+
+This bundle contains two versions of your report:
+
+1. Portfolio_Report_QuickView.pdf
+   - This is a standard PDF report generated immediately for your convenience.
+
+2. latex_source/
+   - This folder contains the professional Latex source code and charts.
+   - We attempted to compile this into a high-quality PDF, but 'pdflatex' was not found on the server.
+   - You can upload the contents of this folder to a service like Overleaf.com or compile it locally if you have MacTeX/TeXLive installed.
+
+Thank you for using VisionWealth.
+                """
+                zf.writestr("README.txt", readme_content)
+
+            # Cleanup temps
+            os.unlink(fallback_pdf_path)
+            if build_dir and os.path.exists(build_dir):
+                shutil.rmtree(build_dir, ignore_errors=True)
+            
+            # Use background tasks to remove the zip after sending
+            if background_tasks:
+                background_tasks.add_task(os.unlink, zip_path)
+                
+            return FileResponse(
+                zip_path,
+                media_type='application/zip',
+                filename=zip_filename
+            )
+
     except Exception as e:
         print(f"Error exporting PDF: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
 
 
-# Builder Models
+
+
+
 class HoldingInput(BaseModel):
     symbol: str
     weight: float

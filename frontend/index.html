@@ -38,6 +38,20 @@
 
                 <!-- Navigation Menu -->
                 <div class="flex items-center space-x-6">
+                    <a href="#"
+                        class="flex items-center px-4 py-3 text-gray-600 hover:bg-gray-50 hover:text-blue-600 rounded-lg transition-colors group"
+                        data-section="goals">
+                        <i
+                            class="fas fa-bullseye w-5 h-5 mr-3 text-gray-400 group-hover:text-blue-600 transition-colors"></i>
+                        <span class="font-medium">Goals</span>
+                    </a>
+                    <a href="#"
+                        class="flex items-center px-4 py-3 text-gray-600 hover:bg-gray-50 hover:text-blue-600 rounded-lg transition-colors group"
+                        data-section="reports">
+                        <i
+                            class="fas fa-file-alt w-5 h-5 mr-3 text-gray-400 group-hover:text-blue-600 transition-colors"></i>
+                        <span class="font-medium">Reports</span>
+                    </a>
                     <button class="text-gray-600 hover:text-blue-600 transition-colors">
                         <i class="fas fa-bell text-lg"></i>
                     </button>
@@ -761,6 +775,41 @@
         </div>
         </div>
 
+        <!-- Reports Section -->
+        <div id="reportsSection" class="hidden space-y-6">
+            <h2 class="text-2xl font-bold text-gray-800">Reports & Exports</h2>
+            <p class="text-gray-500">Generate professional reports for your portfolio</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- PDF Report Card -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                    <div class="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center mb-4 text-red-600">
+                        <i class="fas fa-file-pdf text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold text-gray-800 text-lg mb-2">Portfolio Summary</h3>
+                    <p class="text-gray-500 text-sm mb-6">Comprehensive PDF report including executive summary, top
+                        holdings, and performance metrics.</p>
+                    <button onclick="generatePDFReport()"
+                        class="w-full py-2 px-4 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
+                        <i class="fas fa-download mr-2"></i> Download PDF
+                    </button>
+                </div>
+
+                <!-- CSV Export Card -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                    <div class="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center mb-4 text-green-600">
+                        <i class="fas fa-file-csv text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold text-gray-800 text-lg mb-2">Data Export</h3>
+                    <p class="text-gray-500 text-sm mb-6">Export all your portfolio data, including holdings and
+                        analysis, to a CSV file.</p>
+                    <button onclick="exportToCSV()"
+                        class="w-full py-2 px-4 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
+                        <i class="fas fa-download mr-2"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
         <!-- Portfolio Modal -->
         <div id="portfolioModal" class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center z-50">
             <div class="bg-white rounded-lg w-11/12 max-w-2xl p-6 shadow-lg">
@@ -1573,38 +1622,44 @@
                                 borderWidth: 0
                             }]
                         },
-                    }
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false }
+                            }
+                        }
                     });
 
-                // Populate Sector Table (Dashboard)
-                const tbody = document.getElementById('sectorTable');
-                if (tbody) {
-                    tbody.innerHTML = sectors.slice(0, 5).map(s => `
+                    // Populate Sector Table (Dashboard)
+                    const tbody = document.getElementById('sectorTable');
+                    if (tbody) {
+                        tbody.innerHTML = sectors.slice(0, 5).map(s => `
                             <tr class="border-b border-gray-50 last:border-0">
                                 <td class="px-4 py-2 font-medium text-gray-800">${s.sector}</td>
                                 <td class="px-4 py-2 text-gray-600">${formatCurrency(s.value)}</td>
                                 <td class="px-4 py-2 text-gray-600">${s.percent}%</td>
                             </tr>
                         `).join('');
+                    }
                 }
-            }
 
-            // 2. Risk Metrics (Dashboard Card)
-            if (analytics.advanced_risk && analytics.advanced_risk.metrics) {
-                const m = analytics.advanced_risk.metrics;
-                const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+                // 2. Risk Metrics (Dashboard Card)
+                if (analytics.advanced_risk && analytics.advanced_risk.metrics) {
+                    const m = analytics.advanced_risk.metrics;
+                    const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
 
-                setTxt('metricBeta', m.beta);
-                setTxt('metricSharpe', m.sharpe);
-                setTxt('metricVol', m.volatility + '%');
+                    setTxt('metricBeta', m.beta);
+                    setTxt('metricSharpe', m.sharpe);
+                    setTxt('metricVol', m.volatility + '%');
 
-                const bar = document.getElementById('barBeta');
-                if (bar) {
-                    const pct = Math.min((m.beta / 2) * 100, 100);
-                    bar.style.width = pct + '%';
-                    bar.className = `h-1.5 rounded-full ${m.beta > 1.2 ? 'bg-red-500' : (m.beta < 0.8 ? 'bg-green-500' : 'bg-yellow-500')}`;
+                    const bar = document.getElementById('barBeta');
+                    if (bar) {
+                        const pct = Math.min((m.beta / 2) * 100, 100);
+                        bar.style.width = pct + '%';
+                        bar.className = `h-1.5 rounded-full ${m.beta > 1.2 ? 'bg-red-500' : (m.beta < 0.8 ? 'bg-green-500' : 'bg-yellow-500')}`;
+                    }
                 }
-            }
             }
 
             async function fetchSavedPortfolioAnalytics(id) {
@@ -1914,125 +1969,276 @@
             `;
                 }
 
-                // Holdings
-                document.getElementById('holdingsCount').textContent = summary.num_holdings;
-                document.getElementById('principalAmount').textContent = `Principal: ${formatCurrency(summary.total_principal)}`;
+                // Calculate total portfolio value for progress
+                const totalValue = portfolioData?.summary?.total_value || 0;
+
+                container.innerHTML = goals.map(goal => {
+                    const progress = Math.min((totalValue / goal.target_value) * 100, 100);
+                    return `
+                        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="font-bold text-gray-800 text-lg">${goal.name}</h3>
+                                    <p class="text-sm text-gray-500">Target: ${formatCurrency(goal.target_value)}</p>
+                                </div>
+                                <button onclick="deleteGoal(${goal.id})" class="text-gray-400 hover:text-red-500 transition-colors">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="mb-2 flex justify-between text-sm">
+                                <span class="text-gray-600">Progress</span>
+                                <span class="font-bold text-blue-600">${progress.toFixed(1)}%</span>
+                            </div>
+                            <div class="w-full bg-gray-100 rounded-full h-2.5 mb-4">
+                                <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-1000" style="width: ${progress}%"></div>
+                            </div>
+                            
+                            <div class="flex justify-between text-xs text-gray-400">
+                                <span>Current: ${formatCurrency(totalValue)}</span>
+                                <span>${goal.target_date ? new Date(goal.target_date).toLocaleDateString() : 'No date'}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             }
 
-            function renderCharts(chartData) {
-                // Destroy existing charts
-                Object.values(charts).forEach(chart => chart.destroy());
-                charts = {};
+            async function createGoal(e) {
+                e.preventDefault();
+                const name = document.getElementById('goalName').value;
+                const amount = parseFloat(document.getElementById('goalAmount').value);
+                const date = document.getElementById('goalDate').value;
 
-                // 1. Portfolio Allocation Pie Chart
-                const allocCtx = document.getElementById('allocationChart').getContext('2d');
-                charts.allocation = new Chart(allocCtx, {
-                    type: 'pie',
-                    data: {
-                        labels: chartData.allocation_by_symbol.map(d => d.Symbol),
-                        datasets: [{
-                            data: chartData.allocation_by_symbol.map(d => d['Value ($)']),
-                            backgroundColor: generateColors(chartData.allocation_by_symbol.length)
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right' },
-                            tooltip: {
-                                callbacks: {
-                                    label: (context) => {
-                                        const label = context.label || '';
-                                        const value = formatCurrency(context.parsed);
-                                        const pct = chartData.allocation_by_symbol[context.dataIndex]['Assets (%)'].toFixed(2);
-                                        return `${label}: ${value} (${pct}%)`;
-                                    }
-                                }
-                            }
-                        }
+                try {
+                    const response = await fetch(`${API_URL}/api/v2/goals`, {
+                        method: 'POST',
+                        headers: Auth.getHeaders(),
+                        body: JSON.stringify({
+                            name,
+                            target_value: amount,
+                            target_date: date || null
+                        })
+                    });
+
+                    if (response.ok) {
+                        Toast.success('Goal created successfully');
+                        document.getElementById('goalModal').classList.add('hidden');
+                        document.getElementById('goalForm').reset();
+                        fetchGoals();
+                    } else {
+                        Toast.error('Failed to create goal');
                     }
-                });
+                } catch (error) {
+                    console.error('Error creating goal:', error);
+                    Toast.error('Error creating goal');
+                }
+            }
 
-                // 2. Asset Type Distribution
-                const typeCtx = document.getElementById('assetTypeChart').getContext('2d');
-                charts.assetType = new Chart(typeCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: chartData.allocation_by_type.map(d => d['Asset Type']),
-                        datasets: [{
-                            data: chartData.allocation_by_type.map(d => d['Value ($)']),
-                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'right' }
-                        }
+            async function deleteGoal(id) {
+                if (!confirm('Are you sure you want to delete this goal?')) return;
+
+                try {
+                    const response = await fetch(`${API_URL}/api/v2/goals/${id}`, {
+                        method: 'DELETE',
+                        headers: Auth.getHeaders()
+                    });
+
+                    if (response.ok) {
+                        Toast.success('Goal deleted');
+                        fetchGoals();
                     }
-                });
+                } catch (error) {
+                    Toast.error('Error deleting goal');
+                }
+            }
 
-                // 3. Gain/Loss Bar Chart
-                const glCtx = document.getElementById('gainLossChart').getContext('2d');
-                const glData = chartData.gain_loss_by_symbol;
-                charts.gainLoss = new Chart(glCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: glData.map(d => d.Symbol),
-                        datasets: [{
-                            label: 'Gain/Loss ($)',
-                            data: glData.map(d => d['NFS G/L ($)']),
-                            backgroundColor: glData.map(d => d['NFS G/L ($)'] >= 0 ? '#10b981' : '#ef4444')
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: {
-                            legend: { display: false }
+            // ========== REPORTS ==========
+            async function generatePDFReport() {
+                if (!portfolioData) {
+                    Toast.error('Please upload a portfolio first');
+                    return;
+                }
+
+                const btn = document.querySelector('button[onclick="generatePDFReport()"]');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Generating...';
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch(`${API_URL}/api/v2/reports/generate`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(Auth.token ? { 'Authorization': `Bearer ${Auth.token}` } : {})
                         },
-                        scales: {
-                            x: {
-                                ticks: {
-                                    callback: (value) => formatCurrency(value)
-                                }
-                            }
-                        }
-                    }
-                });
+                        body: JSON.stringify(portfolioData)
+                    });
 
-                // 4. Daily Movement Bar Chart
-                const dmCtx = document.getElementById('dailyMovementChart').getContext('2d');
-                const dmData = chartData.daily_movement;
-                charts.dailyMovement = new Chart(dmCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: dmData.map(d => d.Symbol),
-                        datasets: [{
-                            label: 'Daily Change ($)',
-                            data: dmData.map(d => d['1-Day Value Change ($)']),
-                            backgroundColor: dmData.map(d => d['1-Day Value Change ($)'] >= 0 ? '#10b981' : '#ef4444')
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: {
-                            legend: { display: false }
-                        },
-                        scales: {
-                            x: {
-                                ticks: {
-                                    callback: (value) => formatCurrency(value)
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+
+                        // Try to get filename from header
+                        const contentDisposition = response.headers.get('Content-Disposition');
+                        let filename = `VisionWealth_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+                        if (contentDisposition) {
+                            const match = contentDisposition.match(/filename="?([^"]+)"?/);
+                            if (match && match[1]) {
+                                filename = match[1];
+                            }
+                        }
+
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        Toast.success('Report downloaded successfully');
+                        // Notify user if it's a zip
+                        if (filename.endsWith('.zip')) {
+                            setTimeout(() => {
+                                alert("Notice: Since 'pdflatex' is not available on the server, we have provided a ZIP file containing the Latex source code and a preview PDF.");
+                            }, 1000);
+                        }
+                    } else {
+                        throw new Error('Failed to generate report');
+                    }
+                } catch (error) {
+                    console.error('Report Error:', error);
+                    Toast.error('Failed to generate report');
+                } finally {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            }
+
+            // Event Listeners for Goals
+            document.getElementById('addGoalBtn')?.addEventListener('click', () => {
+                document.getElementById('goalModal').classList.remove('hidden');
+            });
+
+            document.getElementById('closeGoalModal')?.addEventListener('click', () => {
+                document.getElementById('goalModal').classList.add('hidden');
+            });
+
+            document.getElementById('cancelGoalBtn')?.addEventListener('click', () => {
+                document.getElementById('goalModal').classList.add('hidden');
+            });
+
+            document.getElementById('goalForm')?.addEventListener('submit', createGoal);
+            charts = {};
+
+            // 1. Portfolio Allocation Pie Chart
+            const allocCtx = document.getElementById('allocationChart').getContext('2d');
+            charts.allocation = new Chart(allocCtx, {
+                type: 'pie',
+                data: {
+                    labels: chartData.allocation_by_symbol.map(d => d.Symbol),
+                    datasets: [{
+                        data: chartData.allocation_by_symbol.map(d => d['Value ($)']),
+                        backgroundColor: generateColors(chartData.allocation_by_symbol.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const label = context.label || '';
+                                    const value = formatCurrency(context.parsed);
+                                    const pct = chartData.allocation_by_symbol[context.dataIndex]['Assets (%)'].toFixed(2);
+                                    return `${label}: ${value} (${pct}%)`;
                                 }
                             }
                         }
                     }
-                });
+                }
+            });
+
+            // 2. Asset Type Distribution
+            const typeCtx = document.getElementById('assetTypeChart').getContext('2d');
+            charts.assetType = new Chart(typeCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: chartData.allocation_by_type.map(d => d['Asset Type']),
+                    datasets: [{
+                        data: chartData.allocation_by_type.map(d => d['Value ($)']),
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+
+            // 3. Gain/Loss Bar Chart
+            const glCtx = document.getElementById('gainLossChart').getContext('2d');
+            const glData = chartData.gain_loss_by_symbol;
+            charts.gainLoss = new Chart(glCtx, {
+                type: 'bar',
+                data: {
+                    labels: glData.map(d => d.Symbol),
+                    datasets: [{
+                        label: 'Gain/Loss ($)',
+                        data: glData.map(d => d['NFS G/L ($)']),
+                        backgroundColor: glData.map(d => d['NFS G/L ($)'] >= 0 ? '#10b981' : '#ef4444')
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: (value) => formatCurrency(value)
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 4. Daily Movement Bar Chart
+            const dmCtx = document.getElementById('dailyMovementChart').getContext('2d');
+            const dmData = chartData.daily_movement;
+            charts.dailyMovement = new Chart(dmCtx, {
+                type: 'bar',
+                data: {
+                    labels: dmData.map(d => d.Symbol),
+                    datasets: [{
+                        label: 'Daily Change ($)',
+                        data: dmData.map(d => d['1-Day Value Change ($)']),
+                        backgroundColor: dmData.map(d => d['1-Day Value Change ($)'] >= 0 ? '#10b981' : '#ef4444')
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: (value) => formatCurrency(value)
+                            }
+                        }
+                    }
+                }
+            });
             }
 
             function renderHoldingsTable(holdings) {
@@ -2559,24 +2765,6 @@
                     .replace(/'/g, "&#039;");
             }
 
-            function exportToCSV() {
-                if (!portfolioData) return;
-
-                const holdings = portfolioData.holdings;
-                const headers = Object.keys(holdings[0]);
-
-                let csv = headers.join(',') + '\n';
-                holdings.forEach(row => {
-                    csv += headers.map(h => `"${row[h]}"`).join(',') + '\n';
-                });
-
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'portfolio_export.csv';
-                a.click();
-            }
 
 
 
@@ -3123,6 +3311,29 @@
                     });
                 });
             }
+
+            // Navigation
+            document.querySelectorAll('a[data-section]').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const section = e.currentTarget.dataset.section;
+
+                    // Hide all sections
+                    document.getElementById('dashboardSection').classList.add('hidden');
+                    document.getElementById('uploadSection').classList.add('hidden');
+                    document.getElementById('goalsSection').classList.add('hidden');
+
+                    // Show target section
+                    if (section === 'dashboard') {
+                        document.getElementById('dashboardSection').classList.remove('hidden');
+                    } else if (section === 'goals') {
+                        document.getElementById('goalsSection').classList.remove('hidden');
+                        fetchGoals();
+                    } else if (section === 'upload') {
+                        document.getElementById('uploadSection').classList.remove('hidden');
+                    }
+                });
+            });
 
             function renderAdvancedAnalytics(analytics) {
                 if (!analytics) return;

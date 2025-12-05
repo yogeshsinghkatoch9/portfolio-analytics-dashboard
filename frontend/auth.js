@@ -3,7 +3,7 @@
  * Handles login, register, logout, and token management
  */
 
-const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+const API_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
     ? 'http://localhost:8000'
     : 'https://portfolio-analytics-dashboard-production.up.railway.app';
 
@@ -34,10 +34,10 @@ const Auth = {
 
             const data = await response.json();
             this.setToken(data.access_token);
-            
+
             // Get user info
             await this.fetchCurrentUser();
-            
+
             return { success: true };
         } catch (error) {
             console.error('Login error:', error);
@@ -59,11 +59,11 @@ const Auth = {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ 
-                    email, 
-                    password, 
+                body: JSON.stringify({
+                    email,
+                    password,
                     full_name: fullName,
-                    role 
+                    role
                 })
             });
 
@@ -156,9 +156,9 @@ const Auth = {
      */
     init() {
         // Check if on protected page without token
-        const isPublicPage = window.location.pathname.endsWith('login.html') || 
-                             window.location.pathname.endsWith('register.html');
-        
+        const isPublicPage = window.location.pathname.endsWith('login.html') ||
+            window.location.pathname.endsWith('register.html');
+
         if (!isPublicPage && !this.isAuthenticated()) {
             window.location.href = 'login.html';
         }
