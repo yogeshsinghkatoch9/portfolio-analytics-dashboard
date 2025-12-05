@@ -5,10 +5,8 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(os.path.dirname(BASE_DIR), 'data')
-os.makedirs(DB_PATH, exist_ok=True)
-DATABASE_URL = f"sqlite:///{os.path.join(DB_PATH, 'portfolio.db')}"
+# Use simple path for Railway compatibility (no directory creation needed)
+DATABASE_URL = "sqlite:///./portfolio.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -55,20 +53,12 @@ class WatchlistItem(Base):
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    # Simple migration for SQLite to add new columns if they don't exist
+    """Initialize database tables - safe for Railway deployment"""
     try:
-        with engine.connect() as conn:
-            # Check if asset_type exists
-            result = conn.execute(Text("PRAGMA table_info(holdings)"))
-            columns = [row[1] for row in result.fetchall()]
-            
-            if 'asset_type' not in columns:
-                conn.execute(Text("ALTER TABLE holdings ADD COLUMN asset_type VARCHAR DEFAULT 'Stock'"))
-            if 'currency' not in columns:
-                conn.execute(Text("ALTER TABLE holdings ADD COLUMN currency VARCHAR DEFAULT 'USD'"))
+        Base.metadata.create_all(bind=engine)
+        print("✅ Database tables created successfully")
     except Exception as e:
-        print(f"Migration warning: {e}")
+        print(f"⚠️ Database init warning: {e}")
 
 
 def get_session():
