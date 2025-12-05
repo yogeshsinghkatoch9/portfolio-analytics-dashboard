@@ -222,8 +222,14 @@ def compute_summary_metrics(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
-def generate_chart_data(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate data structures for all dashboard charts"""
+def generate_chart_data(df: pd.DataFrame, fast_mode: bool = False) -> Dict[str, Any]:
+    """
+    Generate data structures for all dashboard charts
+    fast_mode: Skip expensive operations for large portfolios (>50 holdings)
+    """
+    
+    # Limit to top 10 for faster processing in fast_mode
+    top_n = 10 if fast_mode else 15
     
     # 1. Portfolio Allocation by Symbol (Pie Chart)
     allocation_by_symbol = df[df['Value ($)'] > 0].nlargest(10, 'Value ($)')[['Symbol', 'Value ($)', 'Assets (%)']].to_dict('records')
@@ -247,15 +253,18 @@ def generate_chart_data(df: pd.DataFrame) -> Dict[str, Any]:
         'Assets (%)': 'sum'
     }).reset_index().to_dict('records')
     
-    # 4. Gain/Loss by Symbol (Bar Chart) - Top 15
-    gain_loss_by_symbol = df.nlargest(15, 'NFS G/L ($)', keep='all')[['Symbol', 'NFS G/L ($)', 'NFS G/L (%)']].to_dict('records')
+    # 4. Gain/Loss by Symbol (Bar Chart) - Top N
+    gain_loss_by_symbol = df.nlargest(top_n, 'NFS G/L ($)', keep='all')[['Symbol', 'NFS G/L ($)', 'NFS G/L (%)']].to_dict('records')
     
-    # 5. Daily Movement by Symbol (Bar Chart) - Top 15 absolute changes
-    df['abs_daily_change'] = df['1-Day Value Change ($)'].abs()
-    daily_movement = df.nlargest(15, 'abs_daily_change')[['Symbol', '1-Day Value Change ($)', '1-Day Price Change (%)']].to_dict('records')
+    # 5. Daily Movement by Symbol (Bar Chart) - Top N absolute changes
+    if not fast_mode or '1-Day Value Change ($)' in df.columns:
+        df['abs_daily_change'] = df['1-Day Value Change ($)'].abs()
+        daily_movement = df.nlargest(top_n, 'abs_daily_change')[['Symbol', '1-Day Value Change ($)', '1-Day Price Change (%)']].to_dict('records')
+    else:
+        daily_movement = []
     
     # 6. Yield Distribution (Bar Chart) - Top yielding stocks
-    yield_distribution = df[df['Current Yld/Dist Rate (%)'] > 0].nlargest(15, 'Current Yld/Dist Rate (%)')[
+    yield_distribution = df[df['Current Yld/Dist Rate (%)'] > 0].nlargest(top_n, 'Current Yld/Dist Rate (%)')[
         ['Symbol', 'Current Yld/Dist Rate (%)', 'Est Annual Income ($)']
     ].to_dict('records')
     
