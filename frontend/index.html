@@ -2577,22 +2577,36 @@
 
                     // Try to fetch data first
                     try {
+                        console.log('Fetching stock data for', query);
                         const response = await fetch(`${API_URL}/api/market/search?q=${query}`);
+                        console.log('Response status:', response.status);
+
                         if (response.ok) {
                             const data = await response.json();
+                            console.log('API response data:', data);
                             const results = Array.isArray(data) ? data : (data.results || []);
+
                             if (results.length > 0) {
+                                console.log('Adding stock to builder:', results[0]);
                                 addToBuilder(results[0], true); // Add with animation
                                 btn.innerHTML = originalHTML;
                                 btn.disabled = false;
                                 return;
+                            } else {
+                                console.warn('No results found for', query);
+                                Toast.info(`No data found for ${query}. Adding as manual entry.`);
                             }
+                        } else {
+                            console.error('API request failed with status:', response.status);
+                            Toast.warning(`Could not fetch data for ${query}. Adding as manual entry.`);
                         }
                     } catch (e) {
-                        console.error(e);
+                        console.error('Error fetching stock data:', e);
+                        Toast.warning(`Error fetching ${query} data. Adding as manual entry.`);
                     }
 
                     // Fallback: manual entry
+                    console.log('Adding as manual entry:', query);
                     addToBuilder({ symbol: query, price: 0, name: 'Manual Entry' }, true);
                     btn.innerHTML = originalHTML;
                     btn.disabled = false;
