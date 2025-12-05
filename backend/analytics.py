@@ -518,7 +518,7 @@ def calculate_advanced_risk_analytics(portfolio: pd.DataFrame) -> Dict[str, Any]
 def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
     """
     Convert JSON holdings list [{'symbol': 'AAPL', 'weight': 50}] to DataFrame
-    and fetch real-time data
+    with minimal API calls for fast response
     """
     try:
         import yfinance as yf
@@ -527,82 +527,81 @@ def analyze_portfolio_from_json(holdings: List[Dict[str, Any]]) -> pd.DataFrame:
             return pd.DataFrame()
             
         symbols = [h['symbol'].upper() for h in holdings]
-        # Create a map for weights
         weight_map = {h['symbol'].upper(): h['weight'] for h in holdings}
         
-        # Fetch data
-        tickers = yf.Tickers(' '.join(symbols))
+        # Assume $100k portfolio for simulation
+        total_portfolio_value = 100000
         
         data = []
         for symbol in symbols:
             try:
-                ticker = tickers.tickers[symbol]
-                # Fast info fetch
-                info = ticker.fast_info
-                price = info.last_price
+                ticker = yf.Ticker(symbol)
                 
-                # If fast_info fails or is empty, try .info (slower)
-                if price is None:
-                    price = ticker.info.get('currentPrice', 0)
+                # Use ONLY fast_info for speed - no history or full info calls
+                try:
+                    price = ticker.fast_info.last_price
+                except:
+                    # Fallback to minimal info if fast_info fails
+                    price = 100.0  # Default price for estimation
                 
-                # Calculate implied values (assuming $100k portfolio for simulation)
-                total_portfolio_value = 100000
+                if price is None or price == 0:
+                    price = 100.0  # Default
+                
+                # Calculate values
                 weight = weight_map[symbol]
                 value = total_portfolio_value * (weight / 100)
                 shares = value / price if price > 0 else 0
                 
-                # Get other metrics if available
-                # Note: fast_info has limited data. For full analytics we might need more.
-                # For now, we'll estimate or fetch minimal data.
-                
-                # We need 'Sector', 'Asset Type', 'Total Return (%)' for existing analytics to work
-                # This is a limitation: real-time fetching of all this for many tickers is slow.
-                # We might need to mock some or fetch asynchronously.
-                
-                # Try to get cached info or fetch
-                # For simulation, we might rely on yfinance history for returns
-                
-                # Fetch 1y history for return calc
-                hist = ticker.history(period="1y")
-                if not hist.empty:
-                    start_price = hist['Close'].iloc[0]
-                    curr_price = hist['Close'].iloc[-1]
-                    total_return = ((curr_price - start_price) / start_price) * 100
-                else:
-                    total_return = 0
-                
-                # Attempt to get sector/type
-                # This is slow with yfinance for many tickers. 
-                # In a real app, we'd have a database of tickers.
-                asset_type = 'Stock' # Default
-                sector = 'Unknown'
-                try:
-                    meta = ticker.info
-                    asset_type = meta.get('quoteType', 'Stock')
-                    sector = meta.get('sector', 'Unknown')
-                except:
-                    pass
-
+                # Use defaults for fields that would require slow API calls
                 data.append({
                     'Symbol': symbol,
-                    'Description': symbol, # Placeholder
+                    'Description': symbol,
                     'Quantity': shares,
                     'Price ($)': price,
                     'Value ($)': value,
                     'Assets (%)': weight,
-                    'Total Return (%)': total_return,
-                    'Sector': sector,
-                    'Asset Type': asset_type,
-                    'Est Annual Income ($)': value * (ticker.info.get('dividendYield', 0) or 0)
+                    'Total Return (%)': 0,  # Default - would need history
+                    'Sector': 'Technology',  # Default - would need full info
+                    'Asset Type': 'Stock',   # Default
+                    'Est Annual Income ($)': 0,  # Default - would need full info
+                    'NFS G/L ($)': 0,
+                    'Principal ($)*': value,  # Assume cost basis = current value
+                    'NFS G/L (%)': 0,
+                    '1-Day Value Change ($)': 0,
+                    '1-Day Price Change (%)': 0,
+                    'Current Yld/Dist Rate (%)': 0
                 })
                 
             except Exception as e:
                 print(f"Error fetching data for {symbol}: {e}")
+                # Add with defaults even if it fails
+                weight = weight_map.get(symbol, 0)
+                value = total_portfolio_value * (weight / 100)
+                data.append({
+                    'Symbol': symbol,
+                    'Description': symbol,
+                    'Quantity': 0,
+                    'Price ($)': 0,
+                    'Value ($)': value,
+                    'Assets (%)': weight,
+                    'Total Return (%)': 0,
+                    'Sector': 'Unknown',
+                    'Asset Type': 'Stock',
+                    'Est Annual Income ($)': 0,
+                    'NFS G/L ($)': 0,
+                    'Principal ($)*': value,
+                    'NFS G/L (%)': 0,
+                    '1-Day Value Change ($)': 0,
+                    '1-Day Price Change (%)': 0,
+                    'Current Yld/Dist Rate (%)': 0
+                })
                 
         return pd.DataFrame(data)
         
     except Exception as e:
         print(f"Error analyzing portfolio from JSON: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
 
