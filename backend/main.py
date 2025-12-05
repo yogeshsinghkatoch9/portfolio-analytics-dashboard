@@ -27,7 +27,6 @@ import wealth_api
 import watchlist_api
 import news_api
 import ai_api
-import ai_api
 import os
 import zipfile
 import shutil
@@ -104,16 +103,17 @@ async def startup_event():
     # Initialize existing database
     try:
         db_module.init_db()
-    except Exception:
-        pass
+        print("✅ Legacy database initialized")
+    except Exception as e:
+        print(f"⚠️  Legacy database initialization skipped: {e}")
     
-    # Initialize new auth database
+    # Initialize new auth database  
     if AUTH_ENABLED:
         try:
             Base.metadata.create_all(bind=engine)
-            print("✅ Database tables created successfully")
+            print("✅ Auth database tables created successfully")
         except Exception as e:
-            print(f"⚠️  Database initialization failed: {e}")
+            print(f"⚠️  Auth database initialization failed: {e}")
 
 
 # ========================================
