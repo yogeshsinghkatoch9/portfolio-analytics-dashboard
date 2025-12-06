@@ -98,6 +98,19 @@ app.include_router(reports_api.router, prefix='/api/v2')
 app.include_router(export_api.router, prefix='/api/v2')
 
 
+# ========================================
+# RATE LIMITING
+# ========================================
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
 @app.on_event("startup")
 async def startup_event():
     # Initialize existing database
@@ -114,6 +127,71 @@ async def startup_event():
             print("✅ Auth database tables created successfully")
         except Exception as e:
             print(f"⚠️  Auth database initialization failed: {e}")
+
+
+# ========================================
+# GLOBAL ERROR HANDLING
+# ========================================
+
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import traceback
+import logging
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    """Handle HTTP exceptions"""
+    logger.warning(f"HTTP {exc.status_code}: {exc.detail} - Path: {request.url.path}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "status_code": exc.status_code,
+            "path": str(request.url.path)
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Handle validation errors"""
+    logger.warning(f"Validation error: {exc} - Path: {request.url.path}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation error",
+            "status_code": 422,
+            "detail": str(exc),
+            "path": str(request.url.path)
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Catch-all exception handler"""
+    logger.error(f"Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
+    
+    # Don't expose internal errors in production
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "status_code": 500,
+            "message": "An unexpected error occurred. Please try again later.",
+            "path": str(request.url.path)
+        }
+    )
 
 
 # ========================================
