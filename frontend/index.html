@@ -3785,6 +3785,20 @@
                 return result;
             }
         </script>
+
+        <!-- Emergency tab setup - ensure this runs -->
+        <script>
+            console.log('Emergency script loaded!');
+            // Force tab setup if not already done
+            setTimeout(() => {
+                if (typeof setupTabs === 'function') {
+                    console.log('Calling setupTabs from emergency script');
+                    setupTabs();
+                } else {
+                    console.error('setupTabs function not found!');
+                }
+            }, 100);
+        </script>
 </body>
 
 </html>
