@@ -1134,11 +1134,8 @@ async def refresh_token(
 # STATIC FILES
 # ========================================
 
-# Serve frontend static files if available
+# Frontend directory path
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-    logger.info(f"✅ Static files mounted from: {frontend_dir}")
 
 
 # ========================================
@@ -2306,6 +2303,17 @@ async def generate_proposal(
             {'success': False, 'error': str(e)},
             status_code=500
         )
+
+
+# ========================================
+# MOUNT STATIC FILES (Must be AFTER all routes!)
+# ========================================
+
+# Mount frontend static files at root to serve CSS, JS, and other assets
+# This MUST be the last thing before __main__ to avoid catching API routes
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+    logger.info(f"✅ Frontend static files mounted at root from: {frontend_dir}")
 
 
 # ========================================

@@ -1,0 +1,15 @@
+# LangChain Core Dependencies
+langchain==0.1.0
+langchain-openai==0.0.5
+langchain-community==0.0.13
+
+# Vector Store & Embeddings
+chromadb==0.4.22
+sentence-transformers==2.3.1
+
+# Output Parsing & Validation (will be installed as dependency)
+# langchain-core will be auto-installed with compatible version
+
+# Additional Tools
+tiktoken==0.5.2
+

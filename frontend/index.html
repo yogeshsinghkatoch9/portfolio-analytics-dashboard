@@ -359,30 +359,156 @@
                         </div>
                     </div>
 
-                    <!-- Portfolio Analysis Section (NEW) -->
+                    <!-- 🚀 ENHANCED AI ANALYSIS (LangChain) -->
                     <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                            <i class="fas fa-chart-line text-blue-600 mr-2"></i>
-                            📊 Portfolio Analysis & Insights
-                        </h3>
-                        <div id="portfolioAnalysisText" class="space-y-3 text-gray-700 leading-relaxed">
-                            <div class="text-center py-8 text-gray-400">
-                                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                                <p>Analyzing your portfolio data...</p>
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-900 flex items-center">
+                                    <i class="fas fa-brain text-purple-600 mr-2"></i>
+                                    AI Portfolio Analysis
+                                </h3>
+                                <p class="text-sm text-gray-500">Powered by LangChain</p>
                             </div>
+                            <div class="flex space-x-2">
+                                <button id="switchToLangChain"
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium transition">
+                                    <i class="fas fa-robot mr-1"></i> Enhanced AI
+                                </button>
+                                <button id="refreshAIBtn"
+                                    class="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div id="aiLoading" class="text-center py-8">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4">
+                            </div>
+                            <p class="text-gray-600">Analyzing your portfolio...</p>
+                        </div>
+
+                        <!-- Error State -->
+                        <div id="aiError" class="hidden bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                            <p class="text-red-800 font-medium">AI Analysis Unavailable</p>
+                            <p id="aiErrorMessage" class="text-red-600 text-sm mt-1"></p>
+                        </div>
+
+                        <!-- Analysis Results -->
+                        <div id="aiInsightsContent" class="hidden">
+                            <!-- Score & Sentiment -->
+                            <div class="grid grid-cols-2 gap-4 mb-6">
+                                <div class="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg p-4 text-center">
+                                    <p class="text-sm text-gray-600 mb-1">Portfolio Health Score</p>
+                                    <p id="portfolioScore" class="text-4xl font-bold text-purple-600">--</p>
+                                    <p class="text-xs text-gray-500 mt-1">out of 100</p>
+                                </div>
+                                <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 text-center">
+                                    <p class="text-sm text-gray-600 mb-1">Market Sentiment</p>
+                                    <p id="portfolioSentiment" class="text-3xl font-bold text-gray-600">--</p>
+                                </div>
+                            </div>
+
+                            <!-- Summary -->
+                            <div class="mb-6">
+                                <h4 class="font-bold text-gray-900 mb-2">📝 Executive Summary</h4>
+                                <p id="aiSummary" class="text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg"></p>
+                            </div>
+
+                            <!-- Tabs for Risks, Opportunities, Recommendations -->
+                            <div class="border-b border-gray-200 mb-4">
+                                <nav class="-mb-px flex space-x-8">
+                                    <button
+                                        class="ai-tab text-purple-600 border-b-2 border-purple-600 py-2 px-1 text-sm font-medium"
+                                        data-ai-tab="risks">
+                                        ⚠️ Risks
+                                    </button>
+                                    <button
+                                        class="ai-tab text-gray-500 hover:text-gray-700 py-2 px-1 text-sm font-medium"
+                                        data-ai-tab="opportunities">
+                                        💡 Opportunities
+                                    </button>
+                                    <button
+                                        class="ai-tab text-gray-500 hover:text-gray-700 py-2 px-1 text-sm font-medium"
+                                        data-ai-tab="recommendations">
+                                        🎯 Recommendations
+                                    </button>
+                                </nav>
+                            </div>
+
+                            <!-- Tab Content -->
+                            <div id="ai-risks-content" class="ai-tab-content">
+                                <ul id="aiRisks" class="space-y-3"></ul>
+                            </div>
+
+                            <div id="ai-opportunities-content" class=" ai-tab-content hidden">
+                                <ul id="aiOpportunities" class="space-y-3"></ul>
+                            </div>
+
+                            <div id="ai-recommendations-content" class="ai-tab-content hidden">
+                                <ul id="aiRecommendations" class="space-y-3"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 🔍 PORTFOLIO HISTORY (RAG) -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-gray-900 flex items-center">
+                                    <i class="fas fa-history text-blue-600 mr-2"></i>
+                                    Portfolio History
+                                </h3>
+                                <p class="text-sm text-gray-500">Ask questions about your past performance</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <!-- Quick Questions -->
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    onclick="queryPortfolioHistory('How has my technology allocation changed over time?')"
+                                    class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200 transition">
+                                    📊 Tech allocation changes
+                                </button>
+                                <button onclick="queryPortfolioHistory('When was my portfolio value highest?')"
+                                    class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200 transition">
+                                    📈 Highest value period
+                                </button>
+                                <button onclick="queryPortfolioHistory('Show me periods with similar risk levels')"
+                                    class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200 transition">
+                                    🎲 Similar periods
+                                </button>
+                            </div>
+
+                            <!-- Custom Query -->
+                            <div class="flex space-x-2">
+                                <input type="text" id="ragQueryInput"
+                                    class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    placeholder="Ask about your portfolio history..." />
+                                <button onclick="queryPortfolioHistory(document.getElementById('ragQueryInput').value)"
+                                    class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition">
+                                    <i class="fas fa-search mr-1"></i> Ask
+                                </button>
+                            </div>
+
+                            <!-- Results -->
+                            <div id="ragResults" class="mt-4"></div>
                         </div>
                     </div>
 
                     <!-- Benchmarking Chart (New) -->
                     <div class="glass-panel p-6 mb-8">
                         <h3 class="text-xl font-bold mb-4 text-white">Portfolio Performance vs S&P 500 (1Y Backtest)
-                        </h3>
-                        <div class="h-80">
-                            <canvas id="benchmarkChart"></canvas>
-                        </div>
-                        <div id="benchmarkMetrics" class="grid grid-cols-3 gap-4 mt-4 text-center">
-                            <!-- Metrics injected here -->
-                        </div>
+                            <div class="h-80">
+                                <canvas id="benchmarkChart"></canvas>
+                            </div>
+                            <div id="benchmarkMetrics" class="grid grid-cols-3 gap-4 mt-4 text-center">
+                                <!-- Metrics injected here -->
+                            </div>
                     </div>
 
                     <!-- Dividend Calendar (New) -->
@@ -3949,6 +4075,79 @@
                 } else {
                     initTabs();
                 }
+            </script>
+
+            <!-- 💬 Floating AI Chat Button -->
+            <button id="openAIChat"
+                class="fixed bottom-6 right-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl transform hover:scale-110 transition z-40">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+            </button>
+
+            <!-- LangChain AI Integration -->
+            <script src="langchain-ui.js"></script>
+            <script>
+                // Configure API URL if not already set
+                if (typeof API_URL === 'undefined') {
+                    const API_URL = 'http://localhost:8000';
+                }
+
+                // Toggle between standard and LangChain AI
+                document.getElementById('switchToLangChain')?.addEventListener('click', async () => {
+                    const button = document.getElementById('switchToLangChain');
+                    const isLangChain = button.textContent.includes('Enhanced');
+
+                    if (isLangChain) {
+                        button.innerHTML = '<i class="fas fa-robot mr-1"></i> Standard AI';
+                        button.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+                        button.classList.add('bg-gray-600', 'hover:bg-gray-700');
+
+                        // Load LangChain analysis
+                        if (window.portfolioData) {
+                            await loadLangChainAnalysis(window.portfolioData);
+                        }
+                    } else {
+                        button.innerHTML = '<i class="fas fa-robot mr-1"></i> Enhanced AI';
+                        button.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+                        button.classList.add('bg-purple-600', 'hover:bg-purple-700');
+                    }
+                });
+
+                // Setup AI tabs functionality
+                function setupAITabs() {
+                    const tabs = document.querySelectorAll('.ai-tab');
+                    tabs.forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            const targetTab = tab.dataset.aiTab;
+
+                            // Remove active from all tabs
+                            tabs.forEach(t => {
+                                t.classList.remove('text-purple-600', 'border-b-2', 'border-purple-600');
+                                t.classList.add('text-gray-500');
+                            });
+
+                            // Add active to clicked tab
+                            tab.classList.remove('text-gray-500');
+                            tab.classList.add('text-purple-600', 'border-b-2', 'border-purple-600');
+
+                            // Hide all content
+                            document.querySelectorAll('.ai-tab-content').forEach(content => {
+                                content.classList.add('hidden');
+                            });
+
+                            // Show target content
+                            const targetContent = document.getElementById(`ai-${targetTab}-content`);
+                            if (targetContent) {
+                                targetContent.classList.remove('hidden');
+                            }
+                        });
+                    });
+                }
+
+                // Initialize on page load
+                document.addEventListener('DOMContentLoaded', setupAITabs);
             </script>
 </body>
 
