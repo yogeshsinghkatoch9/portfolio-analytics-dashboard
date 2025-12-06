@@ -84,6 +84,7 @@ class UserResponse(BaseModel):
 import goals_api
 import reports_api
 import export_api
+import monte_carlo_api
 
 app = FastAPI(title="Portfolio Analytics API", version="2.0.0")
 
@@ -96,6 +97,7 @@ app.include_router(ai_api.router, prefix='/api/v2')
 app.include_router(goals_api.router, prefix='/api/v2')
 app.include_router(reports_api.router, prefix='/api/v2')
 app.include_router(export_api.router, prefix='/api/v2')
+app.include_router(monte_carlo_api.router, prefix='/api/v2')
 
 
 # ========================================
