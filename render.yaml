@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: portfolio-analytics-backend
+    runtime: python
+    plan: starter
+    region: oregon
+    buildCommand: |
+      cd backend
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      pip install -r requirements-langchain.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4
+      - key: OPENAI_TEMPERATURE
+        value: "0.7"
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: VECTOR_STORE_DIR
+        value: /opt/render/project/src/data/vector_store
+      - key: COLLECTION_NAME
+        value: portfolio_history
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: "3.11.5"
+    healthCheckPath: /
+    autoDeploy: true
+
+databases:
+  - name: portfolio-db
+    plan: starter
+    databaseName: portfolio
+    user: portfolio_user

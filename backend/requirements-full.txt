@@ -1,0 +1,42 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+pandas>=2.2.0
+numpy>=1.26.4
+openpyxl==3.1.2
+python-multipart==0.0.6
+yfinance==0.2.66
+python-dotenv==1.0.0
+scipy>=1.13.0
+reportlab==4.0.7
+pillow>=10.2.0
+matplotlib>=3.9.0
+aiofiles==23.2.1
+requests==2.31.0
+lxml>=5.0.0
+beautifulsoup4==4.12.2
+SQLAlchemy==2.0.44
+pytest==7.4.2
+httpx==0.28.1
+pytest-asyncio==0.22.0
+openai
+email-validator
+jinja2
+passlib[bcrypt]
+python-jose[cryptography]
+bcrypt
+slowapi>=0.1.9
+# LangChain Core Dependencies
+langchain==0.1.0
+langchain-openai==0.0.5
+langchain-community==0.0.13
+
+# Vector Store & Embeddings
+chromadb==0.4.22
+sentence-transformers==2.3.1
+
+# Output Parsing & Validation (will be installed as dependency)
+# langchain-core will be auto-installed with compatible version
+
+# Additional Tools
+tiktoken==0.5.2
+
