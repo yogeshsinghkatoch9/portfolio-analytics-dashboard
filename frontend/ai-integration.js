@@ -193,7 +193,7 @@ function setupAITabs() {
             // Show target content
             const targetContent = document.getElementById(`ai-${targetTab}-content`);
             if (targetContent) {
-                target Content.classList.remove('hidden');
+                targetContent.classList.remove('hidden');
             }
         });
     });
