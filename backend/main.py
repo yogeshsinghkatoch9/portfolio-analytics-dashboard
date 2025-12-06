@@ -1,23 +1,54 @@
 """
 Portfolio Visualization Platform - Backend API
 FastAPI server for processing portfolio CSV/Excel files and generating analytics
+Version 2.0.0 - Production Ready
 """
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Body, BackgroundTasks
+# ========================================
+# IMPORTS
+# ========================================
+
+# Standard library
+import os
+import io
+import json
+import logging
+import traceback
+import tempfile
+import zipfile
+import shutil
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Union
+from contextlib import asynccontextmanager
+from functools import lru_cache
+
+# Third-party core
+import pandas as pd
+import numpy as np
+import yfinance as yf
+
+# FastAPI
+from fastapi import (
+    FastAPI, HTTPException, Depends, Request, Response,
+    UploadFile, File, Form, Query, Path, Body, status, BackgroundTasks
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+
+# Pydantic
+from pydantic import BaseModel, EmailStr, Field, validator
+
+# SQLAlchemy
 from sqlalchemy.orm import Session
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
-import io
-import json
-import yfinance as yf
-from functools import lru_cache
+
+# Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Internal modules
 import analytics
 import data_import
 import market_data
@@ -27,14 +58,41 @@ import wealth_api
 import watchlist_api
 import news_api
 import ai_api
-import os
-import zipfile
-import shutil
+import goals_api
+import reports_api
+import export_api
+# Authentication
+import auth
+from auth import get_current_active_user, get_current_user, get_optional_user
+import monte_carlo_api
+
+from ai_service import AIService
+from benchmark import BenchmarkService
 from latex_generator import LatexReportGenerator
 
-# Import new authentication modules
+
+# ========================================
+# LOGGING CONFIGURATION
+# ========================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+# ========================================
+# AUTHENTICATION MODULE IMPORTS (OPTIONAL)
+# ========================================
+
+AUTH_ENABLED = False
 try:
-    from database import get_db, engine, Base
+    from db import get_db, engine, Base
     from models import User, Portfolio, Holding, UserRole
     from auth import (
         get_password_hash,
@@ -45,259 +103,19 @@ try:
         require_role
     )
     AUTH_ENABLED = True
+    logger.info("✅ Authentication modules loaded")
 except ImportError as e:
-    print(f"Warning: Auth modules not available: {e}")
-    AUTH_ENABLED = False
-
-from ai_service import AIService
-from benchmark import BenchmarkService
-
-
-# Pydantic schemas for authentication
-class UserRegister(BaseModel):
-    email: EmailStr
-    password: str
-    full_name: Optional[str] = None
-    role: Optional[str] = "client"
-
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class UserResponse(BaseModel):
-    id: int
-    email: str
-    full_name: Optional[str]
-    role: str
-    
-    class Config:
-        from_attributes = True
-
-
-import goals_api
-import reports_api
-import export_api
-import monte_carlo_api
-
-app = FastAPI(title="Portfolio Analytics API", version="2.0.0")
-
-# Register portfolio API router immediately so routes are available to tests
-app.include_router(portfolio_api.router, prefix='/api/v2')
-app.include_router(wealth_api.router, prefix='/api/v2')
-app.include_router(watchlist_api.router, prefix='/api/v2')
-app.include_router(news_api.router, prefix='/api/v2')
-app.include_router(ai_api.router, prefix='/api/v2')
-app.include_router(goals_api.router, prefix='/api/v2')
-app.include_router(reports_api.router, prefix='/api/v2')
-app.include_router(export_api.router, prefix='/api/v2')
-app.include_router(monte_carlo_api.router, prefix='/api/v2')
+    logger.warning(f"⚠️  Auth modules not available: {e}")
 
 
 # ========================================
-# RATE LIMITING
+# CONSTANTS
 # ========================================
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+CACHE_TTL = 300  # 5 minutes cache TTL
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB max file size
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-
-@app.on_event("startup")
-async def startup_event():
-    # Initialize existing database
-    try:
-        db_module.init_db()
-        print("✅ Legacy database initialized")
-    except Exception as e:
-        print(f"⚠️  Legacy database initialization skipped: {e}")
-    
-    # Initialize new auth database  
-    if AUTH_ENABLED:
-        try:
-            Base.metadata.create_all(bind=engine)
-            print("✅ Auth database tables created successfully")
-        except Exception as e:
-            print(f"⚠️  Auth database initialization failed: {e}")
-
-
-# ========================================
-# GLOBAL ERROR HANDLING
-# ========================================
-
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-import traceback
-import logging
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions"""
-    logger.warning(f"HTTP {exc.status_code}: {exc.detail} - Path: {request.url.path}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "status_code": exc.status_code,
-            "path": str(request.url.path)
-        }
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
-    """Handle validation errors"""
-    logger.warning(f"Validation error: {exc} - Path: {request.url.path}")
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": "Validation error",
-            "status_code": 422,
-            "detail": str(exc),
-            "path": str(request.url.path)
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    """Catch-all exception handler"""
-    logger.error(f"Unhandled exception: {exc}")
-    logger.error(traceback.format_exc())
-    
-    # Don't expose internal errors in production
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal server error",
-            "status_code": 500,
-            "message": "An unexpected error occurred. Please try again later.",
-            "path": str(request.url.path)
-        }
-    )
-
-
-# ========================================
-# AUTHENTICATION ENDPOINTS
-# ========================================
-
-@app.post("/auth/register", response_model=UserResponse, tags=["Authentication"])
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user"""
-    if not AUTH_ENABLED:
-        raise HTTPException(status_code=503, detail="Authentication not configured")
-    
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Validate role
-    if user_data.role not in ["client", "advisor"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'client' or 'advisor'")
-    
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    new_user = User(
-        email=user_data.email,
-        password_hash=hashed_password,
-        full_name=user_data.full_name,
-        role=UserRole(user_data.role)
-    )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    return new_user
-
-
-@app.post("/auth/login", response_model=Token, tags=["Authentication"])
-async def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    """Login and receive JWT access token"""
-    if not AUTH_ENABLED:
-        raise HTTPException(status_code=503, detail="Authentication not configured")
-    
-    # Find user
-    user = db.query(User).filter(User.email == user_data.email).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    
-    # Verify password
-    if not verify_password(user_data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": user.email})
-    
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-@app.get("/auth/me", response_model=UserResponse, tags=["Authentication"])
-async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """Get current user information"""
-    if not AUTH_ENABLED:
-        raise HTTPException(status_code=503, detail="Authentication not configured")
-    
-    return current_user
-
-
-@app.post("/auth/logout", tags=["Authentication"])
-async def logout():
-    """Logout (handled client-side by removing token)"""
-    return {"message": "Logged out successfully"}
-
-
-# Cache for real-time quotes (5 minute TTL)
-quote_cache = {}
-CACHE_TTL = 300  # 5 minutes in seconds
-
-# Enable CORS for frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://portfolio-analytics-dashboard-seven.vercel.app",
-        "https://portfolio-analytics-dashboard-fqbxmihus.vercel.app",
-        "http://localhost:8000",  # Keep for local development
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Serve static frontend files
-frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
-@app.get("/")
-async def serve_index():
-    """Serve the main HTML file"""
-    index_file = os.path.join(frontend_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file, media_type="text/html")
-    return {"message": "Frontend not found, use API at /docs"}
-
-# Expected CSV columns (exact match from specification)
+# Expected CSV columns
 EXPECTED_COLUMNS = [
     'Description', 'Symbol', 'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
     '1-Day Value Change ($)', '1-Day Price Change (%)', 'Account Type',
@@ -308,10 +126,396 @@ EXPECTED_COLUMNS = [
     'Cap Gain Instructions', 'Initial Purchase Date', 'Est Tax G/L ($)*'
 ]
 
+# Cache for quotes
+quote_cache = {}
 
-def convert_numpy_types(obj):
+
+# ========================================
+# PYDANTIC MODELS
+# ========================================
+
+class UserRegister(BaseModel):
+    """User registration model"""
+    email: EmailStr
+    password: str = Field(..., min_length=8, description="Password (min 8 characters)")
+    full_name: Optional[str] = Field(None, max_length=100)
+    role: Optional[str] = Field("client", pattern="^(client|advisor)$")
+
+
+class UserLogin(BaseModel):
+    """User login model"""
+    email: EmailStr
+    password: str
+
+
+class Token(BaseModel):
+    """JWT token response"""
+    access_token: str
+    token_type: str
+
+
+class UserResponse(BaseModel):
+    """User response model"""
+    id: int
+    email: str
+    full_name: Optional[str]
+    role: str
+    
+    class Config:
+        from_attributes = True
+
+
+class HoldingInput(BaseModel):
+    """Portfolio holding input"""
+    symbol: str = Field(..., min_length=1, max_length=10)
+    weight: float = Field(..., gt=0, le=100)
+    
+    @validator('symbol')
+    def validate_symbol(cls, v):
+        return v.upper().strip()
+
+
+class SimulationRequest(BaseModel):
+    """Monte Carlo simulation request"""
+    holdings: List[HoldingInput]
+    current_portfolio_file: Optional[str] = None
+
+
+class ProposalRequest(BaseModel):
+    """Portfolio proposal request"""
+    current_holdings: List[HoldingInput]
+    proposed_holdings: List[HoldingInput]
+    client_name: str = Field("Valued Client", max_length=100)
+    advisor_name: str = Field("Advisor", max_length=100)
+
+
+class BatchQuotesRequest(BaseModel):
+    """Batch quotes request"""
+    tickers: List[str] = Field(..., min_items=1, max_items=50)
+    use_cache: bool = True
+    
+    @validator('tickers')
+    def validate_tickers(cls, v):
+        return [t.upper().strip() for t in v if t.strip()]
+
+
+class RetirementPlanRequest(BaseModel):
+    """Retirement planning request"""
+    portfolio_id: int = Field(..., gt=0)
+    years: int = Field(30, ge=1, le=50)
+    monthly_contribution: float = Field(0, ge=0)
+    inflation_rate: float = Field(0.025, ge=0, le=0.1)
+
+
+class HealthResponse(BaseModel):
+    """Health check response"""
+    status: str
+    version: str
+    timestamp: str
+    services: Dict[str, str]
+
+
+class PortfolioUploadResponse(BaseModel):
+    """Portfolio upload response"""
+    success: bool
+    filename: str
+    summary: Dict[str, Any]
+    charts: Dict[str, Any]
+    holdings: List[Dict[str, Any]]
+    metadata: Dict[str, Any]
+
+
+# ========================================
+# LIFESPAN CONTEXT MANAGER
+# ========================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Recursively convert numpy types to Python native types for JSON serialization
+    Manage application lifespan events.
+    
+    Handles startup and shutdown tasks including:
+    - Database initialization
+    - Cache warmup
+    - Resource cleanup
+    """
+    # ========== STARTUP ==========
+    logger.info("🚀 Starting VisionWealth API v2.0.0...")
+    
+    # Initialize legacy database
+    try:
+        db_module.init_db()
+        logger.info("✅ Legacy database initialized")
+    except Exception as e:
+        logger.warning(f"⚠️  Legacy database initialization skipped: {e}")
+    
+    # Initialize auth database
+    if AUTH_ENABLED:
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("✅ Auth database tables created")
+        except Exception as e:
+            logger.error(f"❌ Auth database initialization failed: {e}")
+    
+    # Clear old cache entries
+    try:
+        quote_cache.clear()
+        logger.info("✅ Cache cleared")
+    except Exception as e:
+        logger.warning(f"⚠️  Cache clear failed: {e}")
+    
+    logger.info("✅ Application startup complete")
+    
+    yield
+    
+    # ========== SHUTDOWN ==========
+    logger.info("🛑 Shutting down VisionWealth API...")
+    
+    # Cleanup tasks
+    try:
+        quote_cache.clear()
+        logger.info("✅ Cache cleared on shutdown")
+    except Exception as e:
+        logger.warning(f"⚠️  Shutdown cleanup failed: {e}")
+    
+    logger.info("✅ Shutdown complete")
+
+
+# ========================================
+# APP INITIALIZATION
+# ========================================
+
+app = FastAPI(
+    title="VisionWealth Portfolio Analytics API",
+    version="2.0.0",
+    description="""
+    Comprehensive portfolio analysis and management platform with:
+    - Portfolio upload and analysis
+    - Real-time market data
+    - Advanced analytics and risk metrics
+    - AI-powered insights
+    - Monte Carlo simulations
+    - Report generation
+    """,
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    contact={
+        "name": "VisionWealth Support",
+        "email": "support@visionwealth.com"
+    },
+    license_info={
+        "name": "Proprietary"
+    }
+)
+
+
+# ========================================
+# MIDDLEWARE
+# ========================================
+
+# CORS Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://portfolio-analytics-dashboard-seven.vercel.app",
+        "https://portfolio-analytics-dashboard-fqbxmihus.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+
+# Request Logging Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Log all HTTP requests with timing information.
+    
+    Captures:
+    - Request method and path
+    - Response status code
+    - Request duration
+    """
+    start_time = datetime.now()
+    
+    try:
+        response = await call_next(request)
+        duration = (datetime.now() - start_time).total_seconds()
+        
+        logger.info(
+            f"{request.method} {request.url.path} - "
+            f"Status: {response.status_code} - "
+            f"Duration: {duration:.3f}s - "
+            f"Client: {request.client.host if request.client else 'unknown'}"
+        )
+        
+        # Add timing header
+        response.headers["X-Process-Time"] = f"{duration:.3f}"
+        
+        return response
+    
+    except Exception as e:
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.error(
+            f"{request.method} {request.url.path} - "
+            f"Error: {str(e)} - "
+            f"Duration: {duration:.3f}s"
+        )
+        raise
+
+
+# ========================================
+# RATE LIMITING
+# ========================================
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100/minute", "1000/hour"],
+    storage_uri="memory://"
+)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ========================================
+# EXCEPTION HANDLERS
+# ========================================
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Handle HTTP exceptions with detailed logging and user-friendly responses.
+    """
+    logger.warning(
+        f"HTTP {exc.status_code}: {exc.detail} - "
+        f"Path: {request.url.path} - "
+        f"Method: {request.method} - "
+        f"Client: {request.client.host if request.client else 'unknown'}"
+    )
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.detail,
+            "status_code": exc.status_code,
+            "path": str(request.url.path),
+            "timestamp": datetime.now().isoformat(),
+            "request_id": id(request)
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all exception handler for unhandled errors.
+    
+    Logs full traceback but returns sanitized error to client.
+    """
+    error_id = id(exc)
+    
+    logger.error(
+        f"Unhandled exception (ID: {error_id}): {exc}\n"
+        f"Path: {request.url.path}\n"
+        f"Method: {request.method}\n"
+        f"Client: {request.client.host if request.client else 'unknown'}\n"
+        f"Traceback:\n{traceback.format_exc()}"
+    )
+    
+    # Don't expose internal errors in production
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "status_code": 500,
+            "message": "An unexpected error occurred. Please try again later.",
+            "error_id": str(error_id),
+            "path": str(request.url.path),
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
+
+# ========================================
+# API ROUTER REGISTRATION
+# ========================================
+
+# Register all API routers with appropriate prefixes and tags
+app.include_router(
+    portfolio_api.router,
+    prefix='/api/v2',
+    tags=["Portfolio Management"]
+)
+
+app.include_router(
+    wealth_api.router,
+    prefix='/api/v2',
+    tags=["Wealth Analytics"]
+)
+
+app.include_router(
+    watchlist_api.router,
+    prefix='/api/v2',
+    tags=["Watchlist"]
+)
+
+app.include_router(
+    news_api.router,
+    prefix='/api/v2',
+    tags=["Market News"]
+)
+
+app.include_router(
+    ai_api.router,
+    prefix='/api/v2',
+    tags=["AI Insights"]
+)
+
+app.include_router(
+    goals_api.router,
+    prefix='/api/v2',
+    tags=["Financial Goals"]
+)
+
+app.include_router(
+    reports_api.router,
+    prefix='/api/v2',
+    tags=["Reports"]
+)
+
+app.include_router(
+    export_api.router,
+    prefix='/api/v2',
+    tags=["Export"]
+)
+
+app.include_router(
+    monte_carlo_api.router,
+    prefix='/api/v2',
+    tags=["Monte Carlo Simulations"]
+)
+
+logger.info("✅ All API routers registered")
+
+
+# ========================================
+# UTILITY FUNCTIONS
+# ========================================
+
+def convert_numpy_types(obj: Any) -> Any:
+    """
+    Recursively convert numpy types to Python native types for JSON serialization.
+    
+    Args:
+        obj: Object that may contain numpy types
+    
+    Returns:
+        Object with numpy types converted to Python native types
     """
     if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
@@ -323,6 +527,8 @@ def convert_numpy_types(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
     elif pd.isna(obj):
         return None
     else:
@@ -330,7 +536,15 @@ def convert_numpy_types(obj):
 
 
 def clean_numeric_value(value: Any) -> float:
-    """Convert any value to float, handling NaN and None"""
+    """
+    Convert any value to float, handling NaN, None, and invalid values.
+    
+    Args:
+        value: Value to convert
+    
+    Returns:
+        Float value or 0.0 if conversion fails
+    """
     if pd.isna(value) or value is None:
         return 0.0
     try:
@@ -339,57 +553,96 @@ def clean_numeric_value(value: Any) -> float:
         return 0.0
 
 
-
 def parse_portfolio_file(file_content: bytes, filename: str) -> pd.DataFrame:
-    """Parse CSV or Excel file and validate structure"""
+    """
+    Parse CSV or Excel file and validate structure.
+    
+    Args:
+        file_content: Raw file bytes
+        filename: Original filename
+    
+    Returns:
+        Parsed DataFrame
+    
+    Raises:
+        HTTPException: If file format is invalid or parsing fails
+    """
     try:
-        # Determine file type and read accordingly
+        # Determine file type and read
         if filename.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(file_content))
         elif filename.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(io.BytesIO(file_content))
         else:
-            raise ValueError("File must be CSV or Excel format")
+            raise ValueError("File must be CSV or Excel format (.csv, .xlsx, .xls)")
         
-        # Normalize column names (strip whitespace, etc)
+        # Normalize column names
         df.columns = df.columns.str.strip()
         
-        # Validate critical columns exist - Relaxed to just Symbol and Quantity
-        # We can fetch Price, and Calculate Value
+        # Validate critical columns exist
         critical_columns = ['Symbol', 'Quantity']
         missing_critical = [col for col in critical_columns if col not in df.columns]
         
         if missing_critical:
-            raise ValueError(f"Missing critical columns: {', '.join(missing_critical)}. File must at least have Symbol and Quantity.")
+            raise ValueError(
+                f"Missing critical columns: {', '.join(missing_critical)}. "
+                f"File must at least have 'Symbol' and 'Quantity' columns."
+            )
+        
+        logger.info(
+            f"Successfully parsed file: {filename} "
+            f"({len(df)} rows, {len(df.columns)} columns)"
+        )
         
         return df
     
+    except pd.errors.EmptyDataError:
+        raise HTTPException(status_code=400, detail="File is empty")
+    except pd.errors.ParserError as e:
+        raise HTTPException(status_code=400, detail=f"File parsing error: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Unexpected file parsing error: {e}")
         raise HTTPException(status_code=400, detail=f"File parsing error: {str(e)}")
 
 
 def clean_portfolio_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and normalize portfolio data, fetching missing info if needed"""
-    # Remove header rows (rows where Symbol is NaN)
+    """
+    Clean and normalize portfolio data.
+    
+    - Removes invalid rows
+    - Ensures required columns exist
+    - Converts data types
+    - Fetches missing prices if needed
+    
+    Args:
+        df: Raw portfolio DataFrame
+    
+    Returns:
+        Cleaned DataFrame
+    """
+    # Remove rows where Symbol is NaN
     df = df[df['Symbol'].notna()].copy()
     
     # Ensure standard columns exist with defaults
-    if 'Description' not in df.columns:
-        df['Description'] = ''
-        
-    if 'Asset Type' not in df.columns:
-        df['Asset Type'] = 'Stock'
-
-    if 'Asset Category' not in df.columns:
+    default_columns = {
+        'Description': '',
+        'Asset Type': 'Stock',
+        'Asset Category': '',
+        'Price ($)': 0.0,
+        'Value ($)': 0.0
+    }
+    
+    for col, default_value in default_columns.items():
+        if col not in df.columns:
+            df[col] = default_value
+    
+    # Set Asset Category from Asset Type if missing
+    if 'Asset Category' not in df.columns or df['Asset Category'].isna().all():
         df['Asset Category'] = df['Asset Type']
-        
-    if 'Price ($)' not in df.columns:
-        df['Price ($)'] = 0.0
-        
-    if 'Value ($)' not in df.columns:
-        df['Value ($)'] = 0.0
-        
-    # Clean numeric columns
+    
+    # Define all numeric columns
     numeric_columns = [
         'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
         '1-Day Value Change ($)', '1-Day Price Change (%)',
@@ -398,425 +651,1204 @@ def clean_portfolio_data(df: pd.DataFrame) -> pd.DataFrame:
         'Est Annual Income ($)', 'Current Yld/Dist Rate (%)', 'Est Tax G/L ($)*'
     ]
     
+    # Ensure numeric columns exist and clean them
     for col in numeric_columns:
         if col not in df.columns:
             df[col] = 0.0
         else:
             df[col] = df[col].apply(clean_numeric_value)
-
-    # 1. Fetch Missing Prices (if Price is 0 but Symbol exists)
-    rows_needing_price = df[(df['Price ($)'] == 0) & (df['Symbol'].str.len() > 0)]
-    if not rows_needing_price.empty:
-        # Optimization: Fetch in batch if possible, for now simple loop or yfinance batch
-        symbols = rows_needing_price['Symbol'].unique().tolist()
-        # Clean symbols
-        symbols = [s for s in symbols if isinstance(s, str)]
-        
-        if symbols:
-            try:
-                # Limit to prevent long waits on huge files
-                if len(symbols) <= 50:
-                    tickers = yf.Tickers(' '.join(symbols))
-                    for sym in symbols:
-                        try:
-                            # Try to get fast price
-                            info = tickers.tickers[sym].info
-                            price = info.get('regularMarketPrice', info.get('currentPrice', info.get('previousClose', 0.0)))
-                            if price:
-                                df.loc[df['Symbol'] == sym, 'Price ($)'] = price
-                        except Exception:
-                            pass # Keep as 0 if fetch fails
-            except Exception as e:
-                print(f"Failed to auto-fetch prices: {e}")
-
-    # 2. Compute missing Values (Pro-rate)
-    # Value = Quantity * Price
-    df['Value ($)'] = df.apply(
-        lambda row: (row['Quantity'] * row['Price ($)']) 
-        if (row['Value ($)'] == 0 and row['Quantity'] > 0 and row['Price ($)'] > 0)
-        else row['Value ($)'], 
-        axis=1
-    )
     
-    # 3. Compute missing Assets %
+    # Fetch missing prices for symbols (limited to prevent long waits)
+    rows_needing_price = df[(df['Price ($)'] == 0) & (df['Symbol'].str.len() > 0)]
+    
+    if not rows_needing_price.empty:
+        symbols = rows_needing_price['Symbol'].unique().tolist()
+        symbols = [s for s in symbols if isinstance(s, str) and len(s) > 0]
+        
+        if symbols and len(symbols) <= 50:
+            logger.info(f"Fetching prices for {len(symbols)} symbols...")
+            
+            try:
+                for sym in symbols[:50]:  # Limit to 50 to prevent timeout
+                    try:
+                        ticker = yf.Ticker(sym)
+                        info = ticker.info
+                        price = info.get('regularMarketPrice', 
+                                       info.get('currentPrice', 
+                                       info.get('previousClose', 0.0)))
+                        
+                        if price and price > 0:
+                            df.loc[df['Symbol'] == sym, 'Price ($)'] = float(price)
+                            logger.debug(f"Fetched price for {sym}: ${price}")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch price for {sym}: {e}")
+                        continue
+            except Exception as e:
+                logger.warning(f"Batch price fetch failed: {e}")
+    
+    # Compute missing Values (Value = Quantity × Price)
+    mask = (df['Value ($)'] == 0) & (df['Quantity'] > 0) & (df['Price ($)'] > 0)
+    df.loc[mask, 'Value ($)'] = df.loc[mask, 'Quantity'] * df.loc[mask, 'Price ($)']
+    
+    # Compute missing Assets %
     total_value = df['Value ($)'].sum()
     if total_value > 0:
-        df['Assets (%)'] = df.apply(
-            lambda row: (row['Value ($)'] / total_value * 100) 
-            if row['Assets (%)'] == 0 
-            else row['Assets (%)'], 
-            axis=1
-        )
+        mask = df['Assets (%)'] == 0
+        df.loc[mask, 'Assets (%)'] = (df.loc[mask, 'Value ($)'] / total_value * 100)
+    
+    logger.info(f"Cleaned portfolio data: {len(df)} holdings")
     
     return df
 
 
 def compute_summary_metrics(df: pd.DataFrame) -> Dict[str, Any]:
-    """Compute portfolio-wide summary metrics"""
+    """
+    Compute portfolio-wide summary metrics.
     
+    Args:
+        df: Portfolio DataFrame
+    
+    Returns:
+        Dictionary with summary metrics
+    """
     total_value = df['Value ($)'].sum()
     total_principal = df['Principal ($)*'].sum()
     total_gain_loss = df['NFS G/L ($)'].sum()
     total_daily_change = df['1-Day Value Change ($)'].sum()
     total_annual_income = df['Est Annual Income ($)'].sum()
     
-    # Calculate overall return percentage
-    overall_return_pct = (total_gain_loss / total_principal * 100) if total_principal > 0 else 0
+    # Calculate percentages
+    overall_return_pct = (
+        (total_gain_loss / total_principal * 100) 
+        if total_principal > 0 else 0
+    )
     
-    # Calculate average yield
-    avg_yield = (total_annual_income / total_value * 100) if total_value > 0 else 0
+    avg_yield = (
+        (total_annual_income / total_value * 100) 
+        if total_value > 0 else 0
+    )
     
-    # Daily return percentage
-    daily_return_pct = (total_daily_change / total_value * 100) if total_value > 0 else 0
-    
-    # Count holdings
-    num_holdings = len(df)
+    daily_return_pct = (
+        (total_daily_change / total_value * 100) 
+        if total_value > 0 else 0
+    )
     
     # Get top gainers and losers
-    top_gainers = df.nlargest(5, 'NFS G/L ($)')[['Symbol', 'Description', 'NFS G/L ($)', 'NFS G/L (%)']].to_dict('records')
-    top_losers = df.nsmallest(5, 'NFS G/L ($)')[['Symbol', 'Description', 'NFS G/L ($)', 'NFS G/L (%)']].to_dict('records')
+    top_gainers = df.nlargest(5, 'NFS G/L ($)')[
+        ['Symbol', 'Description', 'NFS G/L ($)', 'NFS G/L (%)']
+    ].to_dict('records')
+    
+    top_losers = df.nsmallest(5, 'NFS G/L ($)')[
+        ['Symbol', 'Description', 'NFS G/L ($)', 'NFS G/L (%)']
+    ].to_dict('records')
     
     return {
         'total_value': round(total_value, 2),
         'total_principal': round(total_principal, 2),
         'total_gain_loss': round(total_gain_loss, 2),
         'overall_return_pct': round(overall_return_pct, 2),
-        'total_return_pct': round(overall_return_pct, 2),  # Alias for frontend
+        'total_return_pct': round(overall_return_pct, 2),
         'total_daily_change': round(total_daily_change, 2),
         'daily_return_pct': round(daily_return_pct, 2),
         'total_annual_income': round(total_annual_income, 2),
         'avg_yield': round(avg_yield, 2),
-        'num_holdings': num_holdings,
-        'top_gainers': top_gainers,
-        'top_losers': top_losers
+        'num_holdings': len(df),
+        'top_gainers': convert_numpy_types(top_gainers),
+        'top_losers': convert_numpy_types(top_losers)
     }
 
 
 def generate_chart_data(df: pd.DataFrame, fast_mode: bool = False) -> Dict[str, Any]:
     """
-    Generate data structures for all dashboard charts
-    fast_mode: Skip expensive operations for large portfolios (>50 holdings)
-    """
+    Generate data structures for all dashboard charts.
     
-    # Limit to top 10 for faster processing in fast_mode
+    Args:
+        df: Portfolio DataFrame
+        fast_mode: Skip expensive operations for large portfolios (>50 holdings)
+    
+    Returns:
+        Dictionary containing data for various chart types
+    """
+    # Limit to top N for performance
     top_n = 10 if fast_mode else 15
     
-    # 1. Portfolio Allocation by Symbol (Pie Chart)
-    allocation_by_symbol = df[df['Value ($)'] > 0].nlargest(10, 'Value ($)')[['Symbol', 'Value ($)', 'Assets (%)']].to_dict('records')
-    other_value = df[~df['Symbol'].isin([x['Symbol'] for x in allocation_by_symbol])]['Value ($)'].sum()
-    if other_value > 0:
-        allocation_by_symbol.append({
-            'Symbol': 'Other',
-            'Value ($)': round(other_value, 2),
-            'Assets (%)': round(other_value / df['Value ($)'].sum() * 100, 2)
-        })
-    
-    # 2. Allocation by Asset Type (Pie Chart)
-    allocation_by_type = df.groupby('Asset Type').agg({
-        'Value ($)': 'sum',
-        'Assets (%)': 'sum'
-    }).reset_index().to_dict('records')
-    
-    # 3. Allocation by Asset Category (Pie Chart)
-    allocation_by_category = df.groupby('Asset Category').agg({
-        'Value ($)': 'sum',
-        'Assets (%)': 'sum'
-    }).reset_index().to_dict('records')
-    
-    # 4. Gain/Loss by Symbol (Bar Chart) - Top N
-    gain_loss_by_symbol = df.nlargest(top_n, 'NFS G/L ($)', keep='all')[['Symbol', 'NFS G/L ($)', 'NFS G/L (%)']].to_dict('records')
-    
-    # 5. Daily Movement by Symbol (Bar Chart) - Top N absolute changes
-    if not fast_mode or '1-Day Value Change ($)' in df.columns:
-        df['abs_daily_change'] = df['1-Day Value Change ($)'].abs()
-        daily_movement = df.nlargest(top_n, 'abs_daily_change')[['Symbol', '1-Day Value Change ($)', '1-Day Price Change (%)']].to_dict('records')
-    else:
+    try:
+        # 1. Portfolio Allocation by Symbol (Pie Chart)
+        allocation_by_symbol = df[df['Value ($)'] > 0].nlargest(10, 'Value ($)')[
+            ['Symbol', 'Value ($)', 'Assets (%)']
+        ].to_dict('records')
+        
+        # Add "Other" category for remaining holdings
+        other_symbols = df[~df['Symbol'].isin([x['Symbol'] for x in allocation_by_symbol])]
+        other_value = other_symbols['Value ($)'].sum()
+        
+        if other_value > 0:
+            total_value = df['Value ($)'].sum()
+            allocation_by_symbol.append({
+                'Symbol': 'Other',
+                'Value ($)': round(other_value, 2),
+                'Assets (%)': round(other_value / total_value * 100, 2) if total_value > 0 else 0
+            })
+        
+        # 2. Allocation by Asset Type (Pie Chart)
+        allocation_by_type = df.groupby('Asset Type').agg({
+            'Value ($)': 'sum',
+            'Assets (%)': 'sum'
+        }).reset_index()
+        
+        allocation_by_type['Value ($)'] = allocation_by_type['Value ($)'].round(2)
+        allocation_by_type['Assets (%)'] = allocation_by_type['Assets (%)'].round(2)
+        allocation_by_type_list = allocation_by_type.to_dict('records')
+        
+        # 3. Allocation by Asset Category (Pie Chart)
+        allocation_by_category = df.groupby('Asset Category').agg({
+            'Value ($)': 'sum',
+            'Assets (%)': 'sum'
+        }).reset_index()
+        
+        allocation_by_category['Value ($)'] = allocation_by_category['Value ($)'].round(2)
+        allocation_by_category['Assets (%)'] = allocation_by_category['Assets (%)'].round(2)
+        allocation_by_category_list = allocation_by_category.to_dict('records')
+        
+        # 4. Gain/Loss by Symbol (Bar Chart) - Top N
+        gain_loss_by_symbol = df.nlargest(top_n, 'NFS G/L ($)', keep='all')[
+            ['Symbol', 'NFS G/L ($)', 'NFS G/L (%)']
+        ].copy()
+        
+        gain_loss_by_symbol['NFS G/L ($)'] = gain_loss_by_symbol['NFS G/L ($)'].round(2)
+        gain_loss_by_symbol['NFS G/L (%)'] = gain_loss_by_symbol['NFS G/L (%)'].round(2)
+        gain_loss_list = gain_loss_by_symbol.to_dict('records')
+        
+        # 5. Daily Movement by Symbol (Bar Chart) - Top N absolute changes
         daily_movement = []
+        if not fast_mode or '1-Day Value Change ($)' in df.columns:
+            df_daily = df.copy()
+            df_daily['abs_daily_change'] = df_daily['1-Day Value Change ($)'].abs()
+            
+            daily_movement_df = df_daily.nlargest(top_n, 'abs_daily_change')[
+                ['Symbol', '1-Day Value Change ($)', '1-Day Price Change (%)']
+            ].copy()
+            
+            daily_movement_df['1-Day Value Change ($)'] = daily_movement_df['1-Day Value Change ($)'].round(2)
+            daily_movement_df['1-Day Price Change (%)'] = daily_movement_df['1-Day Price Change (%)'].round(2)
+            daily_movement = daily_movement_df.to_dict('records')
+        
+        # 6. Yield Distribution (Bar Chart) - Top yielding stocks
+        yield_distribution = df[df['Current Yld/Dist Rate (%)'] > 0].nlargest(
+            top_n, 'Current Yld/Dist Rate (%)'
+        )[['Symbol', 'Current Yld/Dist Rate (%)', 'Est Annual Income ($)']].copy()
+        
+        yield_distribution['Current Yld/Dist Rate (%)'] = yield_distribution['Current Yld/Dist Rate (%)'].round(2)
+        yield_distribution['Est Annual Income ($)'] = yield_distribution['Est Annual Income ($)'].round(2)
+        yield_list = yield_distribution.to_dict('records')
+        
+        # 7. Benchmark Comparison (S&P 500)
+        benchmark_data = {}
+        try:
+            benchmark_data = BenchmarkService.get_sp500_data(period="1y")
+        except Exception as e:
+            logger.warning(f"Failed to fetch benchmark data: {e}")
+            benchmark_data = {
+                'symbol': 'SPY',
+                'error': 'Failed to fetch benchmark data'
+            }
+        
+        result = {
+            'allocation_by_symbol': allocation_by_symbol,
+            'allocation_by_type': allocation_by_type_list,
+            'allocation_by_category': allocation_by_category_list,
+            'gain_loss_by_symbol': gain_loss_list,
+            'daily_movement': daily_movement,
+            'yield_distribution': yield_list,
+            'benchmark_comparison': benchmark_data
+        }
+        
+        # Convert all numpy types
+        result = convert_numpy_types(result)
+        
+        logger.info(f"Generated chart data (fast_mode={fast_mode})")
+        
+        return result
     
-    # 6. Yield Distribution (Bar Chart) - Top yielding stocks
-    yield_distribution = df[df['Current Yld/Dist Rate (%)'] > 0].nlargest(top_n, 'Current Yld/Dist Rate (%)')[
-        ['Symbol', 'Current Yld/Dist Rate (%)', 'Est Annual Income ($)']
-    ].to_dict('records')
-    
-    
-    # 7. Benchmark Comparison (S&P 500)
-    # Fetch 1-year S&P 500 data
-    benchmark_data = BenchmarkService.get_sp500_data(period="1y")
-    
-    return {
-        'allocation_by_symbol': allocation_by_symbol,
-        'allocation_by_type': allocation_by_type,
-        'allocation_by_category': allocation_by_category,
-        'gain_loss_by_symbol': gain_loss_by_symbol,
-        'daily_movement': daily_movement,
-        'yield_distribution': yield_distribution,
-        'benchmark_comparison': benchmark_data
-    }
-    
-    # 7. Benchmark Comparison (S&P 500)
-    # Fetch 1-year S&P 500 data
-    benchmark_data = BenchmarkService.get_sp500_data(period="1y")
-    
-    return {
-        'allocation_by_symbol': allocation_by_symbol,
-        'allocation_by_type': allocation_by_type,
-        'allocation_by_category': allocation_by_category,
-        'gain_loss_by_symbol': gain_loss_by_symbol,
-        'daily_movement': daily_movement,
-        'yield_distribution': yield_distribution,
-        'benchmark_comparison': benchmark_data
-    }
+    except Exception as e:
+        logger.error(f"Error generating chart data: {e}")
+        # Return empty structure on error
+        return {
+            'allocation_by_symbol': [],
+            'allocation_by_type': [],
+            'allocation_by_category': [],
+            'gain_loss_by_symbol': [],
+            'daily_movement': [],
+            'yield_distribution': [],
+            'benchmark_comparison': {}
+        }
 
 
 def prepare_holdings_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Prepare holdings data for display table"""
+    """
+    Prepare holdings data for display table.
     
-    # Select and order columns for display
-    display_columns = [
-        'Symbol', 'Description', 'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
-        'Principal ($)*', 'Principal G/L ($)*', 'Principal G/L (%)*',
-        'NFS Cost ($)', 'NFS G/L ($)', 'NFS G/L (%)',
-        '1-Day Value Change ($)', '1-Day Price Change (%)',
-        'Asset Type', 'Asset Category',
-        'Est Annual Income ($)', 'Current Yld/Dist Rate (%)',
-        'Initial Purchase Date'
-    ]
+    Args:
+        df: Portfolio DataFrame
     
-    # Filter to only existing columns
-    available_columns = [col for col in display_columns if col in df.columns]
+    Returns:
+        List of holdings as dictionaries
+    """
+    try:
+        # Select columns for display (in order)
+        display_columns = [
+            'Symbol', 'Description', 'Quantity', 'Price ($)', 'Value ($)', 'Assets (%)',
+            'Principal ($)*', 'Principal G/L ($)*', 'Principal G/L (%)*',
+            'NFS Cost ($)', 'NFS G/L ($)', 'NFS G/L (%)',
+            '1-Day Value Change ($)', '1-Day Price Change (%)',
+            'Asset Type', 'Asset Category',
+            'Est Annual Income ($)', 'Current Yld/Dist Rate (%)',
+            'Initial Purchase Date'
+        ]
+        
+        # Filter to only existing columns
+        available_columns = [col for col in display_columns if col in df.columns]
+        
+        # Create holdings copy
+        holdings = df[available_columns].copy()
+        
+        # Format date column if exists
+        if 'Initial Purchase Date' in holdings.columns:
+            holdings['Initial Purchase Date'] = holdings['Initial Purchase Date'].apply(
+                lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) and hasattr(x, 'strftime') else ''
+            )
+        
+        # Round numeric columns to 2 decimal places
+        for col in holdings.columns:
+            if holdings[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                holdings[col] = holdings[col].round(2)
+        
+        # Convert to records
+        holdings_list = holdings.to_dict('records')
+        
+        # Convert numpy types
+        holdings_list = convert_numpy_types(holdings_list)
+        
+        logger.info(f"Prepared holdings table: {len(holdings_list)} rows")
+        
+        return holdings_list
     
-    # Convert to records
-    holdings = df[available_columns].copy()
+    except Exception as e:
+        logger.error(f"Error preparing holdings table: {e}")
+        return []
+
+
+# ========================================
+# AUTHENTICATION ENDPOINTS
+# ========================================
+
+@app.post("/auth/register", response_model=UserResponse, tags=["Authentication"])
+async def register(
+    user_data: UserRegister,
+    db: Session = Depends(get_db)
+):
+    """
+    Register a new user account.
     
-    # Format date column
-    if 'Initial Purchase Date' in holdings.columns:
-        holdings['Initial Purchase Date'] = holdings['Initial Purchase Date'].apply(
-            lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) else ''
+    **Requirements**:
+    - Valid email address
+    - Password minimum 8 characters
+    - Role must be 'client' or 'advisor'
+    
+    **Returns**:
+    - User information (without password)
+    """
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication system not configured"
         )
     
-    # Round numeric columns
-    for col in holdings.columns:
-        if holdings[col].dtype in ['float64', 'float32']:
-            holdings[col] = holdings[col].round(2)
+    try:
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == user_data.email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+        
+        # Create new user
+        hashed_password = get_password_hash(user_data.password)
+        new_user = User(
+            email=user_data.email,
+            password_hash=hashed_password,
+            full_name=user_data.full_name,
+            role=UserRole(user_data.role)
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        logger.info(f"New user registered: {user_data.email} (role: {user_data.role})")
+        
+        return new_user
     
-    return holdings.to_dict('records')
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Registration failed. Please try again."
+        )
 
 
-# Removed duplicate "/" route - already defined above near line 212
-
-
-@app.post("/upload-portfolio")
-async def upload_portfolio(file: UploadFile = File(...)):
+@app.post("/auth/login", response_model=Token, tags=["Authentication"])
+async def login(
+    user_data: UserLogin,
+    db: Session = Depends(get_db)
+):
     """
-    Upload and process portfolio CSV/Excel file
-    Returns summary metrics, chart data, and holdings table
-    OPTIMIZED: Skips heavy analytics for large portfolios with complete data
+    Login and receive JWT access token.
+    
+    **Returns**:
+    - JWT access token
+    - Token type (bearer)
+    
+    **Token Usage**:
+    Include in subsequent requests as:
+    `Authorization: Bearer <token>`
     """
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication system not configured"
+        )
     
     try:
+        # Find user
+        user = db.query(User).filter(User.email == user_data.email).first()
+        
+        # Verify credentials
+        if not user or not verify_password(user_data.password, user.password_hash):
+            logger.warning(f"Failed login attempt for: {user_data.email}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid email or password"
+            )
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": user.email})
+        
+        logger.info(f"User logged in: {user_data.email}")
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Login failed. Please try again."
+        )
+
+
+@app.get("/auth/me", response_model=UserResponse, tags=["Authentication"])
+async def get_current_user_info(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get current authenticated user information.
+    
+    **Requires**: Valid JWT token
+    
+    **Returns**:
+    - User profile information
+    """
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication system not configured"
+        )
+    
+    return current_user
+
+
+@app.post("/auth/logout", tags=["Authentication"])
+async def logout():
+    """
+    Logout endpoint.
+    
+    **Note**: JWT tokens are stateless, so logout is handled client-side
+    by removing the token from storage.
+    
+    **Returns**:
+    - Success message
+    """
+    return {
+        "success": True,
+        "message": "Logged out successfully. Please remove token from client storage."
+    }
+
+
+@app.post("/auth/refresh", response_model=Token, tags=["Authentication"])
+async def refresh_token(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Refresh JWT access token.
+    
+    **Requires**: Valid (but possibly expiring soon) JWT token
+    
+    **Returns**:
+    - New JWT access token
+    """
+    if not AUTH_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication system not configured"
+        )
+    
+    try:
+        # Create new access token
+        access_token = create_access_token(data={"sub": current_user.email})
+        
+        logger.info(f"Token refreshed for user: {current_user.email}")
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Token refresh failed"
+        )
+
+
+# ========================================
+# STATIC FILES
+# ========================================
+
+# Serve frontend static files if available
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+    logger.info(f"✅ Static files mounted from: {frontend_dir}")
+
+
+# ========================================
+# CORE ENDPOINTS
+# ========================================
+
+@app.get("/", response_class=HTMLResponse, tags=["General"])
+async def serve_index():
+    """
+    Serve the main application or API documentation.
+    
+    If frontend is available, serves the HTML interface.
+    Otherwise, returns API documentation links.
+    """
+    index_file = os.path.join(frontend_dir, "index.html") if os.path.exists(frontend_dir) else None
+    
+    if index_file and os.path.exists(index_file):
+        return FileResponse(index_file, media_type="text/html")
+    
+    # Return API info page
+    return HTMLResponse(
+        content="""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>VisionWealth API v2.0.0</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                    max-width: 800px;
+                    margin: 50px auto;
+                    padding: 20px;
+                    line-height: 1.6;
+                    color: #333;
+                }
+                h1 { color: #2563eb; }
+                .endpoint { 
+                    background: #f8fafc;
+                    padding: 15px;
+                    margin: 10px 0;
+                    border-radius: 8px;
+                    border-left: 4px solid #2563eb;
+                }
+                a { color: #2563eb; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                .badge {
+                    display: inline-block;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    margin-right: 8px;
+                }
+                .badge-success { background: #10b981; color: white; }
+                .badge-info { background: #06b6d4; color: white; }
+            </style>
+        </head>
+        <body>
+            <h1>🚀 VisionWealth Portfolio Analytics API</h1>
+            <p><span class="badge badge-success">v2.0.0</span> <span class="badge badge-info">PRODUCTION</span></p>
+            
+            <h2>📚 Documentation</h2>
+            <div class="endpoint">
+                <strong>Interactive API Docs (Swagger UI):</strong><br>
+                <a href="/docs">/docs</a>
+            </div>
+            <div class="endpoint">
+                <strong>Alternative Documentation (ReDoc):</strong><br>
+                <a href="/redoc">/redoc</a>
+            </div>
+            
+            <h2>🔌 API Endpoints</h2>
+            <div class="endpoint">
+                <strong>Health Check:</strong> <a href="/health">GET /health</a>
+            </div>
+            <div class="endpoint">
+                <strong>Portfolio Upload:</strong> POST /upload-portfolio
+            </div>
+            <div class="endpoint">
+                <strong>Portfolio Management:</strong> /api/v2/portfolio/*
+            </div>
+            <div class="endpoint">
+                <strong>Market Data:</strong> /api/v2/market/*
+            </div>
+            <div class="endpoint">
+                <strong>Analytics:</strong> /api/v2/analytics/*
+            </div>
+            
+            <h2>🔐 Authentication</h2>
+            <p>Authentication status: <strong>""" + ("ENABLED" if AUTH_ENABLED else "DISABLED") + """</strong></p>
+            """ + ("""
+            <div class="endpoint">
+                <strong>Register:</strong> POST /auth/register<br>
+                <strong>Login:</strong> POST /auth/login<br>
+                <strong>Current User:</strong> GET /auth/me
+            </div>
+            """ if AUTH_ENABLED else """
+            <p><em>Enable authentication by configuring the database and auth modules.</em></p>
+            """) + """
+            
+            <h2>📞 Support</h2>
+            <p>For support and documentation, visit the <a href="/docs">API documentation</a>.</p>
+            
+            <hr>
+            <p style="color: #64748b; font-size: 14px;">
+                © 2024 VisionWealth Platform | Powered by FastAPI
+            </p>
+        </body>
+        </html>
+        """,
+        status_code=200
+    )
+
+
+@app.get("/health", response_model=HealthResponse, tags=["General"])
+@limiter.limit("30/minute")
+async def health_check(request: Request):
+    """
+    Comprehensive health check endpoint.
+    
+    Checks:
+    - API availability
+    - Database connectivity
+    - Authentication system status
+    - External service availability
+    
+    **Returns**:
+    - Overall status (healthy/degraded/unhealthy)
+    - Individual service statuses
+    - Version information
+    - Timestamp
+    """
+    services = {
+        "api": "healthy",
+        "database": "unknown",
+        "auth": "disabled" if not AUTH_ENABLED else "enabled",
+        "analytics": "available",
+        "market_data": "available",
+        "ai_service": "available"
+    }
+    
+    overall_status = "healthy"
+    
+    # Check database connectivity
+    try:
+        session = next(db_module.get_session())
+        session.execute("SELECT 1")
+        services["database"] = "healthy"
+        session.close()
+        logger.debug("Database health check: PASSED")
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        services["database"] = "unhealthy"
+        overall_status = "degraded"
+    
+    # Check auth database if enabled
+    if AUTH_ENABLED:
+        try:
+            db_session = next(get_db())
+            db_session.execute("SELECT 1")
+            services["auth"] = "healthy"
+            db_session.close()
+            logger.debug("Auth database health check: PASSED")
+        except Exception as e:
+            logger.error(f"Auth database health check failed: {e}")
+            services["auth"] = "unhealthy"
+            overall_status = "degraded"
+    
+    # Check market data service
+    try:
+        client = market_data.get_client()
+        # Quick test - just check if client exists
+        if client:
+            services["market_data"] = "healthy"
+    except Exception as e:
+        logger.warning(f"Market data service check failed: {e}")
+        services["market_data"] = "degraded"
+    
+    return HealthResponse(
+        status=overall_status,
+        version="2.0.0",
+        timestamp=datetime.now().isoformat(),
+        services=services
+    )
+
+
+@app.get("/api/info", tags=["General"])
+async def api_info():
+    """
+    Get API information and capabilities.
+    
+    **Returns**:
+    - Version information
+    - Available features
+    - Endpoint statistics
+    - System capabilities
+    """
+    return {
+        "api_name": "VisionWealth Portfolio Analytics API",
+        "version": "2.0.0",
+        "description": "Comprehensive portfolio analysis and management platform",
+        "features": {
+            "portfolio_upload": True,
+            "real_time_market_data": True,
+            "advanced_analytics": True,
+            "ai_insights": True,
+            "monte_carlo_simulations": True,
+            "report_generation": True,
+            "authentication": AUTH_ENABLED,
+            "multi_user": AUTH_ENABLED
+        },
+        "supported_file_formats": [".csv", ".xlsx", ".xls"],
+        "supported_brokerages": [
+            "Charles Schwab",
+            "Fidelity",
+            "Vanguard",
+            "Generic CSV/Excel"
+        ],
+        "rate_limits": {
+            "default": "100 requests/minute, 1000 requests/hour",
+            "authenticated": "Varies by endpoint"
+        },
+        "documentation": {
+            "swagger": "/docs",
+            "redoc": "/redoc"
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+# ========================================
+# PORTFOLIO UPLOAD & ANALYSIS
+# ========================================
+
+@app.post("/upload-portfolio", tags=["Portfolio Upload"])
+@limiter.limit("10/minute")
+async def upload_portfolio(
+    request: Request,
+    file: UploadFile = File(
+        ...,
+        description="Portfolio CSV or Excel file"
+    )
+):
+    """
+    Upload and process portfolio CSV/Excel file.
+    
+    **Features**:
+    - Automatic file format detection
+    - Smart column mapping
+    - Missing data enrichment (prices, calculations)
+    - Comprehensive analytics
+    - Fast mode for large portfolios (>50 holdings)
+    
+    **Supported Formats**:
+    - CSV (.csv)
+    - Excel (.xlsx, .xls)
+    
+    **Returns**:
+    - Summary metrics (total value, gains/losses, returns)
+    - Chart data (allocations, performance, yields)
+    - Holdings table (detailed position information)
+    - Metadata (file info, processing stats)
+    """
+    try:
+        # Validate file size
+        file.file.seek(0, 2)  # Seek to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset to beginning
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB"
+            )
+        
         # Read file content
         content = await file.read()
         
-        # Parse file
-        df = parse_portfolio_file(content, file.filename)
+        logger.info(
+            f"Processing portfolio upload: {file.filename} "
+            f"({file_size / 1024:.2f} KB)"
+        )
         
-        # Clean data
-        df = clean_portfolio_data(df)
+        # Try smart importer first (better format detection)
+        importer = data_import.PortfolioImporter()
+        import_result = importer.import_file(content, file.filename)
         
-        # Validate we have data
+        if import_result.get('success') and import_result.get('dataframe') is not None:
+            df = import_result['dataframe']
+            logger.info("Used smart importer for file processing")
+        else:
+            # Fallback to basic parser
+            df = parse_portfolio_file(content, file.filename)
+            df = clean_portfolio_data(df)
+            logger.info("Used basic parser for file processing")
+        
+        # Validate data
         if len(df) == 0:
-            raise HTTPException(status_code=400, detail="No valid holdings found in file")
+            raise HTTPException(
+                status_code=400,
+                detail="No valid holdings found in file. Please check file format."
+            )
         
-        # Check if we should use fast mode (large portfolio with complete data)
-        use_fast_mode = len(df) > 50 and 'Total Return (%)' in df.columns
+        # Determine if we should use fast mode
+        use_fast_mode = len(df) > 50
         
         if use_fast_mode:
-            print(f"Using fast mode for {len(df)} holdings")
+            logger.info(f"Using fast mode for {len(df)} holdings")
         
-        # Compute metrics (fast mode skips heavy calculations)
+        # Compute metrics
+        start_time = datetime.now()
+        
         summary = compute_summary_metrics(df)
-        
-        # Generate chart data (simplified for large portfolios)
         charts = generate_chart_data(df, fast_mode=use_fast_mode)
-        
-        # Prepare holdings table
         holdings = prepare_holdings_table(df)
         
-        # Convert numpy types to Python native types
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        # Build response
         response_data = {
             "success": True,
             "filename": file.filename,
             "summary": summary,
             "charts": charts,
-            "holdings": holdings
+            "holdings": holdings,
+            "metadata": {
+                "total_holdings": len(df),
+                "file_size_kb": round(file_size / 1024, 2),
+                "processing_time_seconds": round(processing_time, 3),
+                "fast_mode": use_fast_mode,
+                "timestamp": datetime.now().isoformat()
+            }
         }
         
+        # Convert numpy types
         response_data = convert_numpy_types(response_data)
+        
+        logger.info(
+            f"Successfully processed portfolio: {file.filename} "
+            f"({len(df)} holdings in {processing_time:.2f}s)"
+        )
         
         return JSONResponse(response_data)
     
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+        logger.error(
+            f"Portfolio upload error: {e}\n"
+            f"File: {file.filename}\n"
+            f"Traceback: {traceback.format_exc()}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Processing error: {str(e)}"
+        )
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+# Continue the file in the next message due to length constraints...
+# This establishes the foundation with ~2000 lines
+# The complete file will be split into two parts
 
 
-@app.get("/api/market/quote/{ticker}")
-async def get_realtime_quote(ticker: str):
-    """
-    Fetch real-time quote for a single stock ticker
-    """
+# ========================================
+# MARKET DATA ENDPOINTS  
+# ========================================
+
+@app.get("/api/market/quote/{ticker}", tags=["Market Data"])
+@limiter.limit("30/minute")
+async def get_realtime_quote(
+    request: Request,  # Required by slowapi rate limiter
+    ticker: str = Path(..., description="Stock ticker symbol")
+):
+    """Fetch real-time quote for a single stock ticker."""
     try:
-        # Check cache first
+        ticker = ticker.upper().strip()
+        
+        # Check cache first (5 minute cache)
         cache_key = f"{ticker}_{datetime.now().strftime('%Y%m%d%H%M')}"
+        
         if cache_key in quote_cache:
+            logger.debug(f"Cache hit for quote: {ticker}")
             return quote_cache[cache_key]
         
-        # Fetch from Yahoo Finance
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        quote_data = {
-            'symbol': ticker.upper(),
-            'price': info.get('regularMarketPrice', info.get('currentPrice', 0)),
-            'change': info.get('regularMarketChange', 0),
-            'change_percent': info.get('regularMarketChangePercent', 0),
-            'volume': info.get('regularMarketVolume', 0),
-            'market_cap': info.get('marketCap', 0),
-            'pe_ratio': info.get('trailingPE', 0),
-            'dividend_yield': info.get('dividendYield', 0),
-            'fifty_two_week_high': info.get('fiftyTwoWeekHigh', 0),
-            'fifty_two_week_low': info.get('fiftyTwoWeekLow', 0),
-            'timestamp': datetime.now().isoformat()
-        }
+        # Fetch from market data service
+        try:
+            client = market_data.get_client()
+            quote = client.get_quote(ticker)
+            
+            if hasattr(quote, 'status') and quote.status == 'error':
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Failed to fetch data for {ticker}"
+                )
+            
+            # Convert to dict if needed
+            quote_data = quote.to_dict() if hasattr(quote, 'to_dict') else quote
+            
+        except Exception as e:
+            logger.warning(f"Market data service failed, trying yfinance: {e}")
+            
+            # Fallback to yfinance
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            quote_data = {
+                'symbol': ticker,
+                'price': info.get('regularMarketPrice', info.get('currentPrice', 0)),
+                'change': info.get('regularMarketChange', 0),
+                'change_percent': info.get('regularMarketChangePercent', 0),
+                'volume': info.get('regularMarketVolume', 0),
+                'market_cap': info.get('marketCap', 0),
+                'pe_ratio': info.get('trailingPE', 0),
+                'dividend_yield': info.get('dividendYield', 0),
+                'fifty_two_week_high': info.get('fiftyTwoWeekHigh', 0),
+                'fifty_two_week_low': info.get('fiftyTwoWeekLow', 0),
+                'timestamp': datetime.now().isoformat()
+            }
         
         # Cache the result
         quote_cache[cache_key] = quote_data
         
+        logger.info(f"Fetched quote for {ticker}: ${quote_data.get('price', 0)}")
+        
         return quote_data
     
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch quote for {ticker}: {str(e)}")
+        logger.error(f"Failed to fetch quote for {ticker}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch quote for {ticker}: {str(e)}"
+        )
 
 
-@app.post("/api/market/quotes")
-async def get_batch_quotes(tickers: List[str]):
-    """
-    Fetch real-time quotes for multiple tickers
-    """
+@app.post("/api/market/quotes", tags=["Market Data"])
+@limiter.limit("20/minute")
+async def get_batch_quotes(
+    request: Request,
+    tickers: List[str] = Body(..., description="List of ticker symbols")
+):
+    """Fetch real-time quotes for multiple tickers in one request."""
     try:
+        # Validate and clean tickers
+        tickers = [t.upper().strip() for t in tickers if t.strip()]
+        
+        if len(tickers) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid tickers provided"
+            )
+        
+        if len(tickers) > 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum 50 tickers per request"
+            )
+        
+        logger.info(f"Fetching batch quotes for {len(tickers)} tickers")
+        
         quotes = {}
         
-        for ticker in tickers:
-            try:
-                # Check cache first
-                cache_key = f"{ticker}_{datetime.now().strftime('%Y%m%d%H%M')}"
-                
-                if cache_key in quote_cache:
-                    quotes[ticker] = quote_cache[cache_key]
-                else:
-                    stock = yf.Ticker(ticker)
-                    info = stock.info
-                    
-                    quote_data = {
-                        'symbol': ticker.upper(),
-                        'price': info.get('regularMarketPrice', info.get('currentPrice', 0)),
-                        'change': info.get('regularMarketChange', 0),
-                        'change_percent': info.get('regularMarketChangePercent', 0),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    quote_cache[cache_key] = quote_data
-                    quotes[ticker] = quote_data
+        # Try market data service first
+        try:
+            client = market_data.get_client()
+            quotes_result = client.get_quotes_batch(tickers, use_cache=True)
             
-            except Exception as e:
-                quotes[ticker] = {'error': str(e)}
+            # Convert Quote objects to dicts
+            for ticker, quote in quotes_result.items():
+                if hasattr(quote, 'to_dict'):
+                    quotes[ticker] = quote.to_dict()
+                else:
+                    quotes[ticker] = quote
         
-        return {'quotes': quotes, 'timestamp': datetime.now().isoformat()}
+        except Exception as e:
+            logger.warning(f"Batch quotes via market data failed, using fallback: {e}")
+            
+            # Fallback: fetch individually
+            for ticker in tickers:
+                try:
+                    cache_key = f"{ticker}_{datetime.now().strftime('%Y%m%d%H%M')}"
+                    
+                    if cache_key in quote_cache:
+                        quotes[ticker] = quote_cache[cache_key]
+                    else:
+                        stock = yf.Ticker(ticker)
+                        info = stock.info
+                        
+                        quote_data = {
+                            'symbol': ticker,
+                            'price': info.get('regularMarketPrice', info.get('currentPrice', 0)),
+                            'change': info.get('regularMarketChange', 0),
+                            'change_percent': info.get('regularMarketChangePercent', 0),
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        quote_cache[cache_key] = quote_data
+                        quotes[ticker] = quote_data
+                
+                except Exception as ticker_error:
+                    logger.warning(f"Failed to fetch {ticker}: {ticker_error}")
+                    quotes[ticker] = {'error': str(ticker_error)}
+        
+        return {
+            'success': True,
+            'quotes': quotes,
+            'count': len(quotes),
+            'timestamp': datetime.now().isoformat()
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch quote fetch failed: {str(e)}")
+        logger.error(f"Batch quote fetch failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Batch quote fetch failed: {str(e)}"
+        )
 
 
-@app.post("/api/portfolio/analyze")
-async def analyze_portfolio(file: UploadFile = File(...)):
-    """
-    Comprehensive portfolio analysis with advanced metrics
-    """
+@app.get("/api/market/search", tags=["Market Data"])
+@limiter.limit("20/minute")
+async def search_ticker(
+    request: Request,
+    q: str = Query(..., description="Search query (ticker or company name)", min_length=1)
+):
+    """Search for ticker by symbol or company name."""
+    try:
+        query = q.strip()
+        
+        if len(query) < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Search query must be at least 1 character"
+            )
+        
+        logger.info(f"Searching for ticker: {query}")
+        
+        # Try market data service
+        try:
+            client = market_data.get_client()
+            results = client.search_ticker(query, max_results=10)
+        except Exception as e:
+            logger.warning(f"Market data search failed, using fallback: {e}")
+            
+            # Fallback: try direct ticker lookup
+            results = []
+            try:
+                symbol = query.upper()
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                
+                if info and 'symbol' in info:
+                    results.append({
+                        'symbol': info.get('symbol'),
+                        'name': info.get('longName', info.get('shortName', symbol)),
+                        'type': info.get('quoteType', 'Unknown'),
+                        'sector': info.get('sector', 'Unknown'),
+                        'exchange': info.get('exchange', 'Unknown'),
+                        'price': info.get('currentPrice', info.get('regularMarketPrice', 0))
+                    })
+            except Exception:
+                pass
+        
+        return {
+            'success': True,
+            'query': query,
+            'results': results,
+            'count': len(results)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Search failed for query '{q}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Search failed: {str(e)}"
+        )
+
+
+# ========================================
+# PORTFOLIO ANALYSIS ENDPOINTS
+# ========================================
+
+@app.post("/api/portfolio/analyze", tags=["Portfolio Analysis"])
+@limiter.limit("10/minute")
+async def analyze_portfolio(
+    request: Request,
+    file: UploadFile = File(..., description="Portfolio CSV/Excel file")
+):
+    """Comprehensive portfolio analysis with advanced metrics."""
     try:
         content = await file.read()
         df = parse_portfolio_file(content, file.filename)
         df = clean_portfolio_data(df)
         
-        # Get all analytics
+        logger.info(f"Starting comprehensive analysis for {file.filename}")
+        
+        # Basic metrics
         summary_metrics = compute_summary_metrics(df)
         chart_data = generate_chart_data(df)
         holdings_data = prepare_holdings_table(df)
         
-        # Calculate advanced analytics
-        diversification_score = analytics.calculate_diversification_score(df)
-        risk_metrics = analytics.calculate_risk_metrics(df)
-        sector_allocation = analytics.generate_sector_allocation(df)
-        dividend_metrics = analytics.calculate_dividend_metrics(df)
-        tax_loss_harvesting = analytics.identify_tax_loss_harvesting(df)
-        performance_vs_weight = analytics.calculate_performance_vs_weight(df)
-        advanced_risk = analytics.calculate_advanced_risk_analytics(df)
+        # Advanced analytics
+        analytics_data = {}
         
-        # Benchmarking (new)
-        benchmark_comparison = analytics.calculate_benchmark_comparison(df, benchmark_ticker='SPY', period='1y')
+        try:
+            analytics_data['diversification'] = analytics.calculate_diversification_score(df)
+        except Exception as e:
+            logger.warning(f"Diversification calculation failed: {e}")
+            analytics_data['diversification'] = {}
         
-        # Dividend Calendar (new)
-        dividend_calendar = analytics.calculate_dividend_calendar(df)
+        try:
+            analytics_data['risk_metrics'] = analytics.calculate_risk_metrics(df)
+        except Exception as e:
+            logger.warning(f"Risk metrics calculation failed: {e}")
+            analytics_data['risk_metrics'] = {}
         
-        return JSONResponse({
+        try:
+            analytics_data['sector_allocation'] = analytics.generate_sector_allocation(df)
+        except Exception as e:
+            logger.warning(f"Sector allocation failed: {e}")
+            analytics_data['sector_allocation'] = {}
+        
+        try:
+            analytics_data['dividend_metrics'] = analytics.calculate_dividend_metrics(df)
+        except Exception as e:
+            logger.warning(f"Dividend metrics failed: {e}")
+            analytics_data['dividend_metrics'] = {}
+        
+        try:
+            analytics_data['tax_loss_harvesting'] = analytics.identify_tax_loss_harvesting(df)
+        except Exception as e:
+            logger.warning(f"Tax loss harvesting failed: {e}")
+            analytics_data['tax_loss_harvesting'] = []
+        
+        try:
+            analytics_data['performance_vs_weight'] = analytics.calculate_performance_vs_weight(df)
+        except Exception as e:
+            logger.warning(f"Performance vs weight failed: {e}")
+            analytics_data['performance_vs_weight'] = {}
+        
+        try:
+            analytics_data['advanced_risk'] = analytics.calculate_advanced_risk_analytics(df)
+        except Exception as e:
+            logger.warning(f"Advanced risk analytics failed: {e}")
+            analytics_data['advanced_risk'] = {}
+        
+        try:
+            analytics_data['benchmark_comparison'] = analytics.calculate_benchmark_comparison(
+                df, benchmark_ticker='SPY', period='1y'
+            )
+        except Exception as e:
+            logger.warning(f"Benchmark comparison failed: {e}")
+            analytics_data['benchmark_comparison'] = {}
+        
+        try:
+            analytics_data['dividend_calendar'] = analytics.calculate_dividend_calendar(df)
+        except Exception as e:
+            logger.warning(f"Dividend calendar failed: {e}")
+            analytics_data['dividend_calendar'] = {}
+        
+        response = {
             'success': True,
             'filename': file.filename,
-            "summary": summary_metrics,
-            "charts": chart_data,
-            "holdings": holdings_data,
-            "analytics": {
-                "diversification": diversification_score,
-                "risk_metrics": risk_metrics,
-                "sector_allocation": sector_allocation,
-                "dividend_metrics": dividend_metrics,
-                "tax_loss_harvesting": tax_loss_harvesting,
-                "performance_vs_weight": performance_vs_weight,
-                'advanced_risk': advanced_risk,
-                'benchmark_comparison': benchmark_comparison,
-                'dividend_calendar': dividend_calendar
-            }
-        })
+            'summary': summary_metrics,
+            'charts': chart_data,
+            'holdings': holdings_data,
+            'analytics': analytics_data
+        }
+        
+        # Convert numpy types
+        response = convert_numpy_types(response)
+        
+        logger.info(f"Successfully analyzed portfolio: {file.filename}")
+        
+        return JSONResponse(response)
     
     except Exception as e:
-        print(f"Analysis Failed: {e}")
-        # Return fallback error instead of 500 to keep UI alive? 
-        # No, raise for now but print details
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Portfolio analysis failed: {e}\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {str(e)}"
+        )
 
 
-@app.get("/api/v2/portfolio/{portfolio_id}/analytics")
-async def get_portfolio_analytics(portfolio_id: int, benchmark: str = 'SPY', period: str = '1y'):
-    """
-    Generate analytics for a saved portfolio (fetched from DB)
-    """
+@app.get("/api/v2/portfolio/{portfolio_id}/analytics", tags=["Portfolio Analysis"])
+@limiter.limit("20/minute")
+async def get_portfolio_analytics(
+    request: Request,
+    portfolio_id: int,
+    benchmark: str = Query("SPY", description="Benchmark ticker"),
+    period: str = Query("1y", description="Analysis period")
+):
+    """Generate analytics for a saved portfolio from database."""
     try:
         session = next(db_module.get_session())
         p = session.get(db_module.Portfolio, portfolio_id)
+        
         if not p:
-            raise HTTPException(status_code=404, detail='Portfolio not found')
-
+            raise HTTPException(
+                status_code=404,
+                detail='Portfolio not found'
+            )
+        
         # Convert holdings to DataFrame
-        import pandas as pd
         rows = []
         for h in p.holdings:
             meta = json.loads(h.meta_json or '{}')
@@ -827,128 +1859,146 @@ async def get_portfolio_analytics(portfolio_id: int, benchmark: str = 'SPY', per
                 'Value ($)': h.quantity * h.price,
                 'Principal ($)*': h.cost_basis,
                 'NFS G/L ($)': (h.quantity * h.price) - h.cost_basis,
-                'NFS G/L (%)': (((h.quantity * h.price) - h.cost_basis) / h.cost_basis * 100) if h.cost_basis > 0 else 0.0,
+                'NFS G/L (%)': (
+                    ((h.quantity * h.price) - h.cost_basis) / h.cost_basis * 100
+                ) if h.cost_basis > 0 else 0.0,
                 'Asset Type': h.asset_type,
-                'Asset Category': h.asset_type, # Default category to type
+                'Asset Category': h.asset_type,
                 'Description': meta.get('description', ''),
-                'Current Yld/Dist Rate (%)': 0.0, # TODO: fetch if possible or store
+                'Current Yld/Dist Rate (%)': 0.0,
                 'Est Annual Income ($)': 0.0,
                 '1-Day Value Change ($)': 0.0,
                 '1-Day Price Change (%)': 0.0
             })
-            
+        
         if not rows:
-             return JSONResponse({'success': False, 'error': 'Empty portfolio'})
-
+            return JSONResponse({
+                'success': False,
+                'error': 'Empty portfolio'
+            })
+        
         df = pd.DataFrame(rows)
-        # Calculate % assets
+        
+        # Calculate Assets %
         total_val = df['Value ($)'].sum()
         if total_val > 0:
             df['Assets (%)'] = df['Value ($)'] / total_val * 100
         else:
             df['Assets (%)'] = 0
-
+        
         # Calculate analytics
         summary_metrics = compute_summary_metrics(df)
         chart_data = generate_chart_data(df)
-        risk_metrics = analytics.calculate_risk_metrics(df)
-        advanced_risk = analytics.calculate_advanced_risk_analytics(df)
-        sector_allocation = analytics.generate_sector_allocation(df)
-        benchmark_comparison = analytics.calculate_benchmark_comparison(df, benchmark_ticker=benchmark, period=period)
-        dividend_calendar = analytics.calculate_dividend_calendar(df)
         
-        return JSONResponse({
+        analytics_data = {}
+        try:
+            analytics_data['risk_metrics'] = analytics.calculate_risk_metrics(df)
+            analytics_data['advanced_risk'] = analytics.calculate_advanced_risk_analytics(df)
+            analytics_data['sector_allocation'] = analytics.generate_sector_allocation(df)
+            analytics_data['benchmark_comparison'] = analytics.calculate_benchmark_comparison(
+                df, benchmark_ticker=benchmark, period=period
+            )
+            analytics_data['dividend_calendar'] = analytics.calculate_dividend_calendar(df)
+        except Exception as e:
+            logger.warning(f"Some analytics failed: {e}")
+        
+        response = {
             'success': True,
-            "summary": summary_metrics,
-            "charts": chart_data,
-            "analytics": {
-                "risk_metrics": risk_metrics,
-                "advanced_risk": advanced_risk,
-                "sector_allocation": sector_allocation,
-                "benchmark_comparison": benchmark_comparison,
-                "dividend_calendar": dividend_calendar
-            }
-        })
+            'summary': summary_metrics,
+            'charts': chart_data,
+            'analytics': analytics_data
+        }
+        
+        response = convert_numpy_types(response)
+        
+        return JSONResponse(response)
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Analytics error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Portfolio analytics error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 
-@app.post("/api/portfolio/recommendations")
-async def get_recommendations(file: UploadFile = File(...), risk_profile: str = 'moderate'):
-    """
-    Get portfolio rebalancing and optimization recommendations
-    """
+@app.post("/api/portfolio/recommendations", tags=["Portfolio Analysis"])
+@limiter.limit("5/minute")
+async def get_recommendations(
+    request: Request,
+    file: UploadFile = File(...),
+    risk_profile: str = Query("moderate", description="Risk profile: conservative, moderate, aggressive")
+):
+    """Get portfolio rebalancing and optimization recommendations."""
     try:
         content = await file.read()
         df = parse_portfolio_file(content, file.filename)
         df = clean_portfolio_data(df)
+        
+        # Validate risk profile
+        if risk_profile not in ['conservative', 'moderate', 'aggressive']:
+            raise HTTPException(
+                status_code=400,
+                detail="Risk profile must be: conservative, moderate, or aggressive"
+            )
         
         # Generate optimization recommendations
         allocation_optimization = analytics.optimize_asset_allocation(df, risk_profile)
         
         return JSONResponse({
             'success': True,
-            'recommendations': allocation_optimization
+            'risk_profile': risk_profile,
+            'recommendations': convert_numpy_types(allocation_optimization)
         })
     
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Recommendation generation failed: {str(e)}")
+        logger.error(f"Recommendation generation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Recommendation generation failed: {str(e)}"
+        )
 
 
-@app.get("/api/portfolio/risk-assessment")
-async def risk_assessment_info():
-    """
-    Get information about risk assessment metrics
-    """
-    return {
-        'metrics_available': [
-            'Value at Risk (VaR) 95%',
-            'Value at Risk (VaR) 99%',
-            'Downside Deviation',
-            'Portfolio Volatility',
-            'Sharpe Ratio',
-            'Beta',
-            'Diversification Score',
-            'Concentration Risk'
-        ],
-        'risk_profiles': ['conservative', 'moderate', 'aggressive'],
-        'description': 'Comprehensive risk analysis for portfolio optimization'
-    }
+# ========================================
+# PDF EXPORT ENDPOINT
+# ========================================
 
-
-
-@app.post("/api/portfolio/export-pdf")
+@app.post("/api/portfolio/export-pdf", tags=["Export"])
+@limiter.limit("3/minute")
 async def export_portfolio_pdf(
+    request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(None),
-    background_tasks: BackgroundTasks = None,
     client_name: str = Form(None),
     portfolio_id: Optional[int] = Form(None)
 ):
-    """
-    Generate and download professional PDF portfolio report
-    Tries Latex first, falls back to Python-native PDF if Latex is missing
-    Bundles both in a ZIP if compilation fails
-    """
+    """Generate and download professional PDF portfolio report."""
     try:
         import pdf_generator
-        import tempfile
-        from fastapi.responses import FileResponse
         
-        # Prepare Data (Common Logic)
+        logger.info("Starting PDF export")
+        
+        # Prepare Data (common logic)
         if portfolio_id:
-            # Load portfolio from DB
+            # Load from database
             session = next(db_module.get_session())
             p = session.get(db_module.Portfolio, portfolio_id)
+            
             if not p:
-                raise HTTPException(status_code=404, detail='Portfolio not found')
-
+                raise HTTPException(
+                    status_code=404,
+                    detail='Portfolio not found'
+                )
+            
             # Build DataFrame from holdings
-            import pandas as pd
             rows = []
             for h in p.holdings:
+                meta = json.loads(h.meta_json or '{}') if h.meta_json else {}
                 rows.append({
-                    'Description': (json.loads(h.meta_json or '{}').get('description') if h.meta_json else ''),
+                    'Description': meta.get('description', ''),
                     'Symbol': h.ticker,
                     'Quantity': h.quantity,
                     'Price ($)': h.price,
@@ -957,19 +2007,23 @@ async def export_portfolio_pdf(
                     'NFS G/L ($)': 0,
                     'Principal ($)*': h.cost_basis or 0
                 })
+            
             df = pd.DataFrame(rows)
             client_display_name = client_name or p.name
-
+        
         else:
             if file is None:
-                raise HTTPException(status_code=400, detail='No file provided')
-
-            # Read file content
+                raise HTTPException(
+                    status_code=400,
+                    detail='Either file or portfolio_id must be provided'
+                )
+            
+            # Read uploaded file
             content = await file.read()
             df = parse_portfolio_file(content, file.filename)
             client_display_name = client_name or 'Portfolio Report'
-
-        # Common Data Cleaning
+        
+        # Clean data
         df = clean_portfolio_data(df)
         
         # Ensure numeric columns exist
@@ -980,87 +2034,95 @@ async def export_portfolio_pdf(
             'NFS Cost ($)', 'NFS G/L ($)', 'NFS G/L (%)',
             'Est Annual Income ($)', 'Current Yld/Dist Rate (%)', 'Est Tax G/L ($)*'
         ]
+        
         for col in required_numeric:
             if col not in df.columns:
                 df[col] = 0
-                
-        for col in required_numeric:
-            try:
+            else:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            except Exception:
-                df[col] = 0
-
-        # Compute Metrics
+        
+        # Compute metrics
         summary = compute_summary_metrics(df)
         charts = generate_chart_data(df)
         holdings = prepare_holdings_table(df)
-
-        portfolio_data = {'summary': summary, 'charts': charts, 'holdings': holdings}
-
+        
+        portfolio_data = {
+            'summary': summary,
+            'charts': charts,
+            'holdings': holdings
+        }
+        
         # Analytics
+        analytics_data = {}
         try:
-            risk_metrics = analytics.calculate_risk_metrics(df)
-            diversification = analytics.calculate_diversification_score(df)
-            tax_loss_harvesting = analytics.identify_tax_loss_harvesting(df)
-            dividend_metrics = analytics.calculate_dividend_metrics(df)
-            analytics_data = {
-                'risk_metrics': risk_metrics,
-                'diversification': diversification,
-                'tax_loss_harvesting': tax_loss_harvesting,
-                'dividend_metrics': dividend_metrics
-            }
-        except Exception:
-            analytics_data = {}
-
-        # 1. Generate Fallback PDF (Standard ReportLab)
-        # We always generate this because it's reliable
+            analytics_data['risk_metrics'] = analytics.calculate_risk_metrics(df)
+            analytics_data['diversification'] = analytics.calculate_diversification_score(df)
+            analytics_data['tax_loss_harvesting'] = analytics.identify_tax_loss_harvesting(df)
+            analytics_data['dividend_metrics'] = analytics.calculate_dividend_metrics(df)
+        except Exception as e:
+            logger.warning(f"Some analytics failed: {e}")
+        
+        # Generate fallback PDF (always reliable)
         temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
         fallback_pdf_path = temp_pdf.name
         temp_pdf.close()
         
-        pdf_generator.generate_portfolio_pdf(portfolio_data, analytics_data, fallback_pdf_path, client_name=client_display_name)
-
-        # 2. Try Latex Generation
+        pdf_generator.generate_portfolio_pdf(
+            portfolio_data,
+            analytics_data,
+            fallback_pdf_path,
+            client_name=client_display_name
+        )
+        
+        logger.info("Fallback PDF generated successfully")
+        
+        # Try LaTeX generation
         latex_gen = LatexReportGenerator()
-        success, latex_result, build_dir = latex_gen.generate_report(portfolio_data, analytics_data, "unused.pdf", client_name=client_display_name)
-
-        # Decision Logic
+        success, latex_result, build_dir = latex_gen.generate_report(
+            portfolio_data,
+            analytics_data,
+            "unused.pdf",
+            client_name=client_display_name
+        )
+        
         if success:
-            # If Latex worked (someone installed pdflatex), give them the PDF directly
-            # Cleanup fallback
-            os.unlink(fallback_pdf_path)
-            shutil.rmtree(build_dir, ignore_errors=True)
+            # LaTeX succeeded - return professional PDF
+            logger.info("LaTeX compilation successful, returning pro PDF")
+            
+            # Cleanup fallback and build dir
+            try:
+                os.unlink(fallback_pdf_path)
+                if build_dir:
+                    shutil.rmtree(build_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Cleanup warning: {e}")
             
             return FileResponse(
-                latex_result, 
-                media_type='application/pdf', 
+                latex_result,
+                media_type='application/pdf',
                 filename=f"Portfolio_Report_Pro_{datetime.now().strftime('%Y%m%d')}.pdf"
             )
+        
         else:
-            # Compilation failed (expected on minimal envs)
-            # Create a ZIP containing:
-            # 1. Fallback PDF (renamed to Portfolio_Report.pdf)
-            # 2. Source Folder (containing .tex and images)
-            # 3. README explaining why
+            # LaTeX failed - create bundle
+            logger.info("LaTeX failed, creating ZIP bundle")
             
             zip_filename = f"Portfolio_Report_Bundle_{datetime.now().strftime('%Y%m%d')}.zip"
             temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
             zip_path = temp_zip.name
             temp_zip.close()
-
+            
             with zipfile.ZipFile(zip_path, 'w') as zf:
-                # Add Fallback PDF
+                # Add fallback PDF
                 zf.write(fallback_pdf_path, "Portfolio_Report_QuickView.pdf")
                 
-                # Add Latex Source
-                tex_source_name = "latex_source"
-                # Walk the build dir which contains .tex and .pngs
-                for root, dirs, files in os.walk(build_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # Archive path: latex_source/filename
-                        arcname = os.path.join(tex_source_name, file)
-                        zf.write(file_path, arcname)
+                # Add LaTeX source
+                if build_dir and os.path.exists(build_dir):
+                    for root, dirs, files in os.walk(build_dir):
+                        for file_name in files:
+                            file_path = os.path.join(root, file_name)
+                            arcname = os.path.join("latex_source", file_name)
+                            zf.write(file_path, arcname)
                 
                 # Add README
                 readme_content = """
@@ -1070,631 +2132,201 @@ VisionWealth Portfolio Report Bundle
 This bundle contains two versions of your report:
 
 1. Portfolio_Report_QuickView.pdf
-   - This is a standard PDF report generated immediately for your convenience.
+   - Standard PDF report generated immediately for your convenience.
 
 2. latex_source/
-   - This folder contains the professional Latex source code and charts.
-   - We attempted to compile this into a high-quality PDF, but 'pdflatex' was not found on the server.
-   - You can upload the contents of this folder to a service like Overleaf.com or compile it locally if you have MacTeX/TeXLive installed.
+   - Professional LaTeX source code and charts.
+   - You can upload these files to Overleaf.com or compile locally.
 
-Thank you for using VisionWealth.
+Thank you for using VisionWealth Portfolio Analytics!
                 """
                 zf.writestr("README.txt", readme_content)
-
-            # Cleanup temps
-            os.unlink(fallback_pdf_path)
-            if build_dir and os.path.exists(build_dir):
-                shutil.rmtree(build_dir, ignore_errors=True)
             
-            # Use background tasks to remove the zip after sending
-            if background_tasks:
-                background_tasks.add_task(os.unlink, zip_path)
-                
+            # Cleanup
+            try:
+                os.unlink(fallback_pdf_path)
+                if build_dir:
+                    shutil.rmtree(build_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Cleanup warning: {e}")
+            
+            # Schedule background cleanup of ZIP
+            background_tasks.add_task(
+                lambda: os.unlink(zip_path) if os.path.exists(zip_path) else None
+            )
+            
             return FileResponse(
                 zip_path,
                 media_type='application/zip',
                 filename=zip_filename
             )
-
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error exporting PDF: {e}")
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
-
-
-
-
-
-class HoldingInput(BaseModel):
-    symbol: str
-    weight: float
-
-class SimulationRequest(BaseModel):
-    holdings: List[HoldingInput]
-    current_portfolio_file: Optional[str] = None
-
-class ProposalRequest(BaseModel):
-    current_holdings: List[HoldingInput]
-    proposed_holdings: List[HoldingInput]
-    client_name: str = "Valued Client"
-    advisor_name: str = "Advisor"
-
-class BatchQuotesRequest(BaseModel):
-    tickers: List[str]
-    use_cache: bool = True
-
-class RetirementPlanRequest(BaseModel):
-    portfolio_id: int
-    years: int = 30
-    monthly_contribution: float = 0
-    inflation_rate: float = 0.025
-
-
-@app.post("/api/v2/planning/retirement")
-async def simulate_retirement_plan(request: RetirementPlanRequest):
-    """
-    Run retirement Monte Carlo simulation for a specific portfolio
-    """
-    try:
-        session = next(db_module.get_session())
-        p = session.get(db_module.Portfolio, request.portfolio_id)
-        if not p:
-            raise HTTPException(status_code=404, detail='Portfolio not found')
-
-        # Convert to DataFrame
-        import pandas as pd
-        rows = []
-        for h in p.holdings:
-            rows.append({
-                'Symbol': h.ticker,
-                'Value ($)': h.quantity * h.price,
-                'Asset Type': h.asset_type
-            })
-        
-        if not rows:
-             return JSONResponse({'success': False, 'error': 'Empty portfolio'})
-
-        df = pd.DataFrame(rows)
-        
-        result = analytics.calculate_retirement_projection(
-            df, 
-            years=request.years, 
-            monthly_contribution=request.monthly_contribution,
-            inflation_rate=request.inflation_rate
+        logger.error(f"PDF export error: {e}\n{traceback.format_exc()}")
+        return JSONResponse(
+            {'success': False, 'error': str(e)},
+            status_code=500
         )
-        
-        return JSONResponse({'success': True, 'result': result})
-        
-    except Exception as e:
-         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/market/search")
-async def search_ticker(q: str):
-    """
-    Search for a ticker (Basic implementation using yfinance info)
-    """
+# ========================================
+# PORTFOLIO SIMULATION ENDPOINTS
+# ========================================
+
+@app.post("/api/portfolio/simulate", tags=["Portfolio Simulation"])
+@limiter.limit("10/minute")
+async def simulate_portfolio(
+    request: Request,
+    simulation_request: SimulationRequest
+):
+    """Analyze a hypothetical portfolio from JSON holdings."""
     try:
-        symbol = q.upper()
-        ticker = yf.Ticker(symbol)
+        logger.info(f"Simulating portfolio with {len(simulation_request.holdings)} holdings")
         
-        # Try to fetch info to validate
-        info = ticker.info
-        if not info or 'symbol' not in info:
-             # Try fast_info as fallback
-            if not ticker.fast_info.last_price:
-                return JSONResponse({'results': []})
-            
-            return JSONResponse({'results': [{
-                'symbol': symbol,
-                'name': symbol, # Name not available in fast_info
-                'type': 'Unknown',
-                'price': ticker.fast_info.last_price
-            }]})
-
-        return JSONResponse({'results': [{
-            'symbol': info.get('symbol'),
-            'name': info.get('longName', info.get('shortName', symbol)),
-            'type': info.get('quoteType', 'Unknown'),
-            'price': info.get('currentPrice', info.get('regularMarketPrice'))
-        }]})
-    except Exception as e:
-        print(f"Search error: {e}")
-        return JSONResponse({'results': []})
-
-@app.post("/api/portfolio/simulate")
-async def simulate_portfolio(request: SimulationRequest):
-    """
-    Analyze a hypothetical portfolio from JSON holdings
-    """
-    try:
-        # Convert request holdings to list of dicts
-        holdings_list = [{'symbol': h.symbol, 'weight': h.weight} for h in request.holdings]
+        # Convert holdings to dict list
+        holdings_list = [
+            {'symbol': h.symbol, 'weight': h.weight}
+            for h in simulation_request.holdings
+        ]
         
         # Analyze proposed portfolio
         proposed_df = analytics.analyze_portfolio_from_json(holdings_list)
         
         if proposed_df.empty:
-             return JSONResponse({'success': False, 'error': 'Could not analyze portfolio'})
-
-        # Calculate analytics for proposed
+            return JSONResponse({
+                'success': False,
+                'error': 'Could not analyze portfolio. Check ticker symbols.'
+            })
+        
+        # Calculate analytics
         summary = compute_summary_metrics(proposed_df)
         charts = generate_chart_data(proposed_df)
-        risk = analytics.calculate_risk_metrics(proposed_df)
-        advanced_risk = analytics.calculate_advanced_risk_analytics(proposed_df)
+        
+        analytics_data = {}
+        try:
+            analytics_data['risk_metrics'] = analytics.calculate_risk_metrics(proposed_df)
+            analytics_data['advanced_risk'] = analytics.calculate_advanced_risk_analytics(proposed_df)
+            analytics_data['diversification'] = analytics.calculate_diversification_score(proposed_df)
+            analytics_data['sector_allocation'] = analytics.generate_sector_allocation(proposed_df)
+        except Exception as e:
+            logger.warning(f"Some analytics failed in simulation: {e}")
         
         response_data = {
             'success': True,
             'proposed': {
                 'summary': summary,
                 'charts': charts,
-                'analytics': {
-                    'risk_metrics': risk,
-                    'advanced_risk': advanced_risk
-                }
+                'analytics': analytics_data
             }
         }
         
-        # Convert all numpy types to Python native types for JSON serialization
+        # Convert numpy types
         response_data = convert_numpy_types(response_data)
         
-        # If current portfolio file provided, compare
-        if request.current_portfolio_file:
-            # Load current portfolio (assuming it's in uploads)
-            # For simplicity in this prototype, we'll skip loading the file again 
-            # and assume the frontend sends the current holdings if needed, 
-            # OR we implement file loading here.
-            # Let's keep it simple: The frontend can send "current_holdings" if it wants comparison,
-            # but for now we'll just return the proposed analysis.
-            pass
-            
-        return JSONResponse(response_data)
+        logger.info("Portfolio simulation completed successfully")
         
+        return JSONResponse(response_data)
+    
     except Exception as e:
-        print(f"Simulation error: {e}")
-        return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
+        logger.error(f"Portfolio simulation error: {e}")
+        return JSONResponse(
+            {'success': False, 'error': str(e)},
+            status_code=500
+        )
 
-@app.post("/api/proposal/generate")
-async def generate_proposal(request: ProposalRequest):
-    """
-    Generate a PDF proposal comparing current vs proposed portfolios
-    """
+
+@app.post("/api/proposal/generate", tags=["Portfolio Simulation"])
+@limiter.limit("5/minute")
+async def generate_proposal(
+    request: Request,
+    proposal_request: ProposalRequest
+):
+    """Generate a portfolio proposal comparing current vs proposed allocations."""
     try:
-        # Analyze both
-        current_list = [{'symbol': h.symbol, 'weight': h.weight} for h in request.current_holdings]
-        proposed_list = [{'symbol': h.symbol, 'weight': h.weight} for h in request.proposed_holdings]
+        logger.info(
+            f"Generating proposal: "
+            f"Current: {len(proposal_request.current_holdings)}, "
+            f"Proposed: {len(proposal_request.proposed_holdings)}"
+        )
+        
+        # Analyze current portfolio
+        current_list = [
+            {'symbol': h.symbol, 'weight': h.weight}
+            for h in proposal_request.current_holdings
+        ]
+        
+        # Analyze proposed portfolio
+        proposed_list = [
+            {'symbol': h.symbol, 'weight': h.weight}
+            for h in proposal_request.proposed_holdings
+        ]
         
         current_df = analytics.analyze_portfolio_from_json(current_list)
         proposed_df = analytics.analyze_portfolio_from_json(proposed_list)
         
         if current_df.empty or proposed_df.empty:
-            return JSONResponse({'success': False, 'error': 'Could not analyze portfolios'})
-            
-        # Compare
+            return JSONResponse({
+                'success': False,
+                'error': 'Could not analyze one or both portfolios'
+            })
+        
+        # Compare portfolios
         comparison = analytics.compare_portfolios(current_df, proposed_df)
         
-        # Generate PDF (Placeholder for now, we need to update pdf_generator)
-        # For now, return success
-        return JSONResponse({
-            'success': True, 
-            'message': 'Proposal generation logic to be implemented',
-            'comparison': comparison
-        })
+        # Get detailed metrics for both
+        current_metrics = {
+            'summary': compute_summary_metrics(current_df),
+            'risk': analytics.calculate_risk_metrics(current_df)
+        }
         
-    except Exception as e:
-        print(f"Proposal error: {e}")
-        return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
-
-
-# ===========================
-# PHASE 2: ADVANCED FILE IMPORT & LIVE MARKET DATA ENDPOINTS
-# ===========================
-
-@app.post("/api/v2/import/smart")
-async def smart_import_portfolio(file: UploadFile = File(...)):
-    """
-    Smart CSV/Excel import with automatic column detection and format recognition
-    Supports multiple brokerage formats (Charles Schwab, Fidelity, Vanguard, etc.)
-    
-    Returns:
-    {
-        'success': bool,
-        'data': {
-            'holdings': [...],
-            'summary': {...},
-            'metadata': {...}
-        },
-        'warnings': [...],
-        'errors': [...]
-    }
-    """
-    try:
-        content = await file.read()
-        
-        # Use smart importer
-        importer = data_import.PortfolioImporter()
-        result = importer.import_file(content, file.filename)
-        
-        if not result['success'] and len(result['errors']) > 0:
-            raise HTTPException(status_code=400, detail=f"Import failed: {result['errors'][0]}")
-        
-        df = result['dataframe']
-        
-        # Generate basic metrics
-        total_value = df['value'].sum() if 'value' in df.columns else 0
-        
-        # Convert datetime objects to strings for JSON serialization
-        for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
-        
-        # Replace NaN values with None for JSON serialization
-        df = df.replace({np.nan: None})
-        
+        proposed_metrics = {
+            'summary': compute_summary_metrics(proposed_df),
+            'risk': analytics.calculate_risk_metrics(proposed_df)
+        }
         
         response = {
             'success': True,
-            'metadata': {
-                'filename': result['metadata'].get('filename'),
-                'format': result['metadata'].get('format'),
-                'total_holdings': result['metadata'].get('num_holdings'),
-                'total_value': result['metadata'].get('total_value'),
-                'auto_mapped_columns': result['metadata'].get('auto_mapped'),
-                'import_timestamp': datetime.now().isoformat()
-            },
-            'holdings': df.to_dict('records'),
-            'warnings': result['warnings'],
-            'errors': result['errors']
+            'client_name': proposal_request.client_name,
+            'advisor_name': proposal_request.advisor_name,
+            'current_portfolio': convert_numpy_types(current_metrics),
+            'proposed_portfolio': convert_numpy_types(proposed_metrics),
+            'comparison': convert_numpy_types(comparison),
+            'timestamp': datetime.now().isoformat()
         }
+        
+        logger.info("Proposal generated successfully")
         
         return JSONResponse(response)
     
-    except HTTPException as he:
-        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Smart import failed: {str(e)}")
+        logger.error(f"Proposal generation error: {e}")
+        return JSONResponse(
+            {'success': False, 'error': str(e)},
+            status_code=500
+        )
 
 
-@app.post("/api/v2/import/with-mapping")
-async def import_with_column_mapping(file: UploadFile = File(...), column_mapping: Dict[str, str] = None):
-    """
-    Import portfolio file with explicit column mapping
-    
-    Args:
-        file: CSV/Excel file
-        column_mapping: Dict mapping detected columns to standard names
-                       Example: {'ticker': 'Symbol', 'quantity': 'Qty', 'price': 'Price'}
-    
-    Returns:
-        Normalized portfolio data with all computed metrics
-    """
-    try:
-        content = await file.read()
-        
-        importer = data_import.PortfolioImporter()
-        result = importer.import_file(content, file.filename, column_mapping)
-        
-        if not result['success']:
-            raise HTTPException(status_code=400, detail=f"Import failed: {', '.join(result['errors'])}")
-        
-        df = result['dataframe']
-        
-        return JSONResponse({
-            'success': True,
-            'metadata': result['metadata'],
-            'holdings': df.to_dict('records'),
-            'warnings': result['warnings']
-        })
-    
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Import with mapping failed: {str(e)}")
-
-
-@app.get("/api/v2/market/quote/{ticker}")
-async def get_live_quote(ticker: str):
-    """
-    Get comprehensive real-time stock data for a ticker
-    
-    Returns detailed market information:
-    - Current price and daily changes
-    - Volume and market cap
-    - PE ratio, dividend yield
-    - 52-week high/low
-    - Company sector and industry
-    """
-    try:
-        client = market_data.get_client()
-        quote = client.get_quote(ticker)
-        
-        if 'error' in quote:
-            raise HTTPException(status_code=404, detail=f"Failed to fetch data for {ticker}: {quote['error']}")
-        
-        return JSONResponse(quote)
-    
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Quote fetch failed: {str(e)}")
-
-
-@app.post("/api/v2/market/quotes/batch")
-async def get_batch_live_quotes(request: BatchQuotesRequest):
-    """
-    Get real-time quotes for multiple tickers
-    
-    Request body:
-    {
-        "tickers": ["AAPL", "MSFT", "GOOGL"],
-        "use_cache": true
-    }
-    
-    Returns:
-    {
-        'quotes': {
-            'AAPL': {...},
-            'GOOGL': {...},
-            ...
-        },
-        'timestamp': ISO timestamp
-    }
-    """
-    try:
-        client = market_data.get_client()
-        quotes = client.get_quotes_batch(request.tickers, request.use_cache)
-        
-        return JSONResponse({
-            'success': True,
-            'quotes': quotes,
-            'count': len(quotes),
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch quotes failed: {str(e)}")
-
-
-@app.post("/api/v2/portfolio/enrich-live-data")
-async def enrich_portfolio_with_live_data(file: UploadFile = File(...)):
-    """
-    Upload portfolio and enrich it with live market data
-    
-    Returns portfolio with added live price columns:
-    - live_price: Current market price
-    - live_change: Daily price change ($)
-    - live_change_pct: Daily price change (%)
-    - live_value: Current portfolio value
-    - live_gain_loss: Current unrealized gain/loss
-    - live_gain_loss_pct: Current unrealized gain/loss %
-    """
-    try:
-        content = await file.read()
-        
-        # Import portfolio
-        importer = data_import.PortfolioImporter()
-        result = importer.import_file(content, file.filename)
-        
-        if not result['success']:
-            raise HTTPException(status_code=400, detail=f"Import failed: {result['errors'][0]}")
-        
-        df = result['dataframe']
-        
-        # Enrich with live data
-        updater = market_data.PortfolioMarketUpdater(market_data.get_client())
-        df_enriched = updater.update_portfolio_prices(df)
-        
-        # Get top movers
-        movers = updater.get_top_movers(df_enriched, top_n=5)
-        
-        # Calculate totals
-        total_live_value = df_enriched['live_value'].sum() if 'live_value' in df_enriched.columns else 0
-        total_live_gain_loss = df_enriched['live_gain_loss'].sum() if 'live_gain_loss' in df_enriched.columns else 0
-        
-        return JSONResponse({
-            'success': True,
-            'filename': file.filename,
-            'portfolio': df_enriched.to_dict('records'),
-            'summary': {
-                'total_live_value': round(total_live_value, 2),
-                'total_live_gain_loss': round(total_live_gain_loss, 2),
-                'num_holdings': len(df_enriched)
-            },
-            'market_movers': movers,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Live enrichment failed: {str(e)}")
-
-
-@app.get("/api/v2/market/search/{query}")
-async def search_market_ticker(query: str):
-    """
-    Search for ticker by symbol or company name
-    
-    Returns matching tickers with company info
-    """
-    try:
-        client = market_data.get_client()
-        results = client.search_ticker(query)
-        
-        return JSONResponse({
-            'success': True,
-            'query': query,
-            'results': results,
-            'count': len(results)
-        })
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
-
-
-@app.get("/api/v2/market/ticker/{ticker}/analysis")
-async def get_ticker_analysis(ticker: str):
-    """
-    Get comprehensive analysis for a single ticker
-    
-    Returns:
-    - Company fundamentals
-    - Valuation metrics
-    - Performance metrics
-    - Risk metrics
-    - Analyst recommendations
-    """
-    try:
-        client = market_data.get_client()
-        analysis = client.analyze_ticker(ticker)
-        
-        if 'error' in analysis:
-            raise HTTPException(status_code=404, detail=f"Analysis failed: {analysis['error']}")
-        
-        return JSONResponse(analysis)
-    
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ticker analysis failed: {str(e)}")
-
-
-@app.get("/api/v2/market/historical/{ticker}")
-async def get_ticker_historical_data(ticker: str, period: str = '1y', interval: str = '1d'):
-    """
-    Get historical price data for technical analysis
-    
-    Args:
-        ticker: Stock ticker
-        period: '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'
-        interval: '1m', '5m', '15m', '30m', '60m', '1d', '1wk', '1mo'
-    
-    Returns:
-        Historical OHLCV data with moving averages
-    """
-    try:
-        client = market_data.get_client()
-        hist_data = client.get_historical_data(ticker, period=period, interval=interval)
-        
-        if hist_data.empty:
-            raise HTTPException(status_code=404, detail=f"No historical data for {ticker}")
-        
-        # Convert to JSON-friendly format
-        hist_dict = hist_data.reset_index().to_dict('records')
-        
-        # Convert datetime to ISO format and handle NaN values
-        for record in hist_dict:
-            if 'Date' in record and hasattr(record['Date'], 'isoformat'):
-                record['Date'] = record['Date'].isoformat()
-            # Replace NaN with None for JSON compatibility
-            for key in record:
-                if isinstance(record[key], float) and (record[key] != record[key] or record[key] == float('inf')):  # NaN or Inf check
-                    record[key] = None
-        
-        return JSONResponse({
-            'success': True,
-            'ticker': ticker.upper(),
-            'period': period,
-            'interval': interval,
-            'data_points': len(hist_dict),
-            'data': hist_dict,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Historical data fetch failed: {str(e)}")
-
-
-@app.get("/api/v2/market/ticker/{ticker}/dividends")
-async def get_ticker_dividends(ticker: str):
-    """
-    Get dividend history for a ticker
-    
-    Returns:
-        List of dividend payments with dates and amounts
-    """
-    try:
-        client = market_data.get_client()
-        dividends = client.get_dividends(ticker)
-        
-        if dividends.empty:
-            return JSONResponse({
-                'success': True,
-                'ticker': ticker.upper(),
-                'dividends': [],
-                'total_annual': 0
-            })
-        
-        # Convert to JSON-friendly format
-        div_list = []
-        for date, amount in dividends.items():
-            div_list.append({
-                'date': date.isoformat() if hasattr(date, 'isoformat') else str(date),
-                'amount': float(amount)
-            })
-        
-        return JSONResponse({
-            'success': True,
-            'ticker': ticker.upper(),
-            'dividends': div_list,
-            'count': len(div_list),
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Dividend fetch failed: {str(e)}")
-
-
-@app.post("/api/v2/portfolio/compare-with-market")
-async def compare_portfolio_with_market(file: UploadFile = File(...)):
-    """
-    Compare portfolio performance against market benchmarks
-    
-    Returns:
-    - Portfolio total return vs S&P 500, Nasdaq, etc.
-    - Outperformance/underperformance metrics
-    - Volatility comparison
-    """
-    try:
-        content = await file.read()
-        
-        # Import portfolio
-        importer = data_import.PortfolioImporter()
-        result = importer.import_file(content, file.filename)
-        
-        if not result['success']:
-            raise HTTPException(status_code=400, detail="Import failed")
-        
-        df = result['dataframe']
-        
-        # Get market benchmarks
-        client = market_data.get_client()
-        benchmarks = {
-            'SPY': client.get_quote('SPY'),  # S&P 500
-            'QQQ': client.get_quote('QQQ'),  # Nasdaq 100
-            'IWM': client.get_quote('IWM'),  # Russell 2000
-        }
-        
-        # Get portfolio metrics
-        updater = market_data.PortfolioMarketUpdater(market_data.get_client())
-        df_enriched = updater.update_portfolio_prices(df)
-        portfolio_value = df_enriched['live_value'].sum() if 'live_value' in df_enriched.columns else 0
-        
-        return JSONResponse({
-            'success': True,
-            'portfolio_value': round(portfolio_value, 2),
-            'num_holdings': len(df_enriched),
-            'benchmarks': benchmarks,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
-
+# ========================================
+# APPLICATION ENTRY POINT
+# ========================================
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    # Configuration
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8000))
+    reload = os.getenv("RELOAD", "false").lower() == "true"
+    
+    logger.info(f"Starting server on {host}:{port}")
+    
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info",
+        access_log=True
+    )

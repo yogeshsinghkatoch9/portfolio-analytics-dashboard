@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-import db
+from db import get_db, SessionLocal
+from models import Portfolio, Holding, Watchlist, WatchlistItem
 from datetime import datetime
 import logging
 import yfinance as yf
@@ -83,16 +84,16 @@ class WatchlistItemsWithPrices(BaseModel):
 @router.post('/watchlist', response_model=WatchlistOut, tags=["Watchlist"])
 def create_watchlist(
     request: WatchlistCreateRequest = WatchlistCreateRequest(),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Create or get the default watchlist"""
     try:
         logger.info(f"Creating/fetching watchlist: {request.name}")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         
         if not watchlist:
-            watchlist = db.Watchlist(
+            watchlist = Watchlist(
                 name=request.name,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -113,16 +114,16 @@ def create_watchlist(
 @router.get('/watchlist', response_model=WatchlistOut, tags=["Watchlist"])
 def get_watchlist(
     include_prices: bool = Query(False, description="Fetch live prices"),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Get the user's watchlist"""
     try:
         logger.info("Fetching watchlist")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         
         if not watchlist:
-            watchlist = db.Watchlist(
+            watchlist = Watchlist(
                 name="My Watchlist",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -141,15 +142,15 @@ def get_watchlist(
 @router.post('/watchlist/items', response_model=WatchlistOut, tags=["Watchlist"])
 def add_watchlist_item(
     request: AddTickerRequest,
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Add a ticker to the watchlist"""
     try:
         logger.info(f"Adding ticker: {request.ticker}")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         if not watchlist:
-            watchlist = db.Watchlist(
+            watchlist = Watchlist(
                 name="My Watchlist",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -163,7 +164,7 @@ def add_watchlist_item(
             raise HTTPException(status_code=400, detail=f"Invalid ticker: {request.ticker}")
         
         # Check duplicate
-        existing = session.query(db.WatchlistItem).filter_by(
+        existing = session.query(WatchlistItem).filter_by(
             watchlist_id=watchlist.id,
             ticker=request.ticker
         ).first()
@@ -173,7 +174,7 @@ def add_watchlist_item(
             return _build_watchlist_response(watchlist, include_prices=False)
         
         # Add new item
-        new_item = db.WatchlistItem(
+        new_item = WatchlistItem(
             watchlist_id=watchlist.id,
             ticker=request.ticker,
             added_at=datetime.utcnow()
@@ -199,15 +200,15 @@ def add_watchlist_item(
 @router.post('/watchlist/items/bulk', response_model=WatchlistOut, tags=["Watchlist"])
 def add_watchlist_items_bulk(
     request: BulkAddTickersRequest,
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Add multiple tickers at once"""
     try:
         logger.info(f"Bulk adding {len(request.tickers)} tickers")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         if not watchlist:
-            watchlist = db.Watchlist(
+            watchlist = Watchlist(
                 name="My Watchlist",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -218,7 +219,7 @@ def add_watchlist_items_bulk(
         
         existing_tickers = {
             item.ticker for item in 
-            session.query(db.WatchlistItem).filter_by(watchlist_id=watchlist.id).all()
+            session.query(WatchlistItem).filter_by(watchlist_id=watchlist.id).all()
         }
         
         added_count = 0
@@ -230,7 +231,7 @@ def add_watchlist_items_bulk(
                 logger.warning(f"Invalid ticker: {ticker}")
                 continue
             
-            new_item = db.WatchlistItem(
+            new_item = WatchlistItem(
                 watchlist_id=watchlist.id,
                 ticker=ticker,
                 added_at=datetime.utcnow()
@@ -254,17 +255,17 @@ def add_watchlist_items_bulk(
 
 
 @router.delete('/watchlist/items/{ticker}', response_model=WatchlistOut, tags=["Watchlist"])
-def remove_watchlist_item(ticker: str, session: Session = Depends(db.get_session)):
+def remove_watchlist_item(ticker: str, session: Session = Depends(get_db)):
     """Remove a ticker from the watchlist"""
     try:
         ticker = ticker.upper().strip()
         logger.info(f"Removing ticker: {ticker}")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         if not watchlist:
             raise HTTPException(status_code=404, detail="Watchlist not found")
         
-        item = session.query(db.WatchlistItem).filter_by(
+        item = session.query(WatchlistItem).filter_by(
             watchlist_id=watchlist.id,
             ticker=ticker
         ).first()
@@ -287,16 +288,16 @@ def remove_watchlist_item(ticker: str, session: Session = Depends(db.get_session
 
 
 @router.delete('/watchlist/items', response_model=WatchlistOut, tags=["Watchlist"])
-def clear_watchlist(session: Session = Depends(db.get_session)):
+def clear_watchlist(session: Session = Depends(get_db)):
     """Remove all items from watchlist"""
     try:
         logger.info("Clearing watchlist")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         if not watchlist:
             raise HTTPException(status_code=404, detail="Watchlist not found")
         
-        session.query(db.WatchlistItem).filter_by(watchlist_id=watchlist.id).delete()
+        session.query(WatchlistItem).filter_by(watchlist_id=watchlist.id).delete()
         watchlist.updated_at = datetime.utcnow()
         session.commit()
         session.refresh(watchlist)
@@ -312,12 +313,12 @@ def clear_watchlist(session: Session = Depends(db.get_session)):
 
 
 @router.get('/watchlist/prices', response_model=WatchlistItemsWithPrices, tags=["Watchlist"])
-def get_watchlist_with_prices(session: Session = Depends(db.get_session)):
+def get_watchlist_with_prices(session: Session = Depends(get_db)):
     """Get watchlist items with live price data"""
     try:
         logger.info("Fetching watchlist with prices")
         
-        watchlist = session.query(db.Watchlist).first()
+        watchlist = session.query(Watchlist).first()
         if not watchlist or not watchlist.items:
             return WatchlistItemsWithPrices(
                 items=[],
@@ -364,7 +365,7 @@ def get_watchlist_with_prices(session: Session = Depends(db.get_session)):
 
 # Helper Functions
 
-def _build_watchlist_response(watchlist: db.Watchlist, include_prices: bool = False) -> WatchlistOut:
+def _build_watchlist_response(watchlist: Watchlist, include_prices: bool = False) -> WatchlistOut:
     """Build watchlist response with optional price data"""
     items_out = []
     

@@ -9,7 +9,8 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-import db
+from db import get_db, SessionLocal
+from models import User, Portfolio, Holding
 from datetime import datetime
 import json
 import logging
@@ -117,12 +118,12 @@ class BulkHoldingOperation(BaseModel):
 # Portfolio Endpoints
 
 @router.post('/portfolio', response_model=PortfolioOut, tags=["Portfolio"], status_code=201)
-def create_portfolio(payload: PortfolioIn, session: Session = Depends(db.get_session)):
+def create_portfolio(payload: PortfolioIn, session: Session = Depends(get_db)):
     """Create a new portfolio with optional initial holdings"""
     try:
         logger.info(f"Creating portfolio: {payload.name}")
         
-        portfolio = db.Portfolio(
+        portfolio = Portfolio(
             name=payload.name,
             description=payload.description,
             created_at=datetime.utcnow(),
@@ -132,7 +133,7 @@ def create_portfolio(payload: PortfolioIn, session: Session = Depends(db.get_ses
         session.flush()
         
         for holding_data in payload.holdings:
-            holding = db.Holding(
+            holding = Holding(
                 portfolio_id=portfolio.id,
                 ticker=holding_data.ticker.upper(),
                 quantity=holding_data.quantity,
@@ -169,18 +170,18 @@ def list_portfolios(
     limit: int = Query(100, ge=1, le=1000),
     sort_by: str = Query("updated_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """List all portfolios with summary information"""
     try:
         logger.info(f"Listing portfolios (skip={skip}, limit={limit})")
         
-        query = session.query(db.Portfolio)
+        query = session.query(Portfolio)
         
         if sort_order == "desc":
-            query = query.order_by(getattr(db.Portfolio, sort_by).desc())
+            query = query.order_by(getattr(Portfolio, sort_by).desc())
         else:
-            query = query.order_by(getattr(db.Portfolio, sort_by).asc())
+            query = query.order_by(getattr(Portfolio, sort_by).asc())
         
         portfolios = query.offset(skip).limit(limit).all()
         
@@ -202,13 +203,13 @@ def list_portfolios(
 def get_portfolio(
     portfolio_id: int,
     include_metadata: bool = Query(True),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Get detailed information about a specific portfolio"""
     try:
         logger.info(f"Retrieving portfolio {portfolio_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
@@ -223,12 +224,12 @@ def get_portfolio(
 
 
 @router.put('/portfolio/{portfolio_id}', response_model=PortfolioOut, tags=["Portfolio"])
-def update_portfolio(portfolio_id: int, payload: PortfolioUpdateIn, session: Session = Depends(db.get_session)):
+def update_portfolio(portfolio_id: int, payload: PortfolioUpdateIn, session: Session = Depends(get_db)):
     """Update portfolio metadata"""
     try:
         logger.info(f"Updating portfolio {portfolio_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
@@ -256,12 +257,12 @@ def update_portfolio(portfolio_id: int, payload: PortfolioUpdateIn, session: Ses
 
 
 @router.delete('/portfolio/{portfolio_id}', tags=["Portfolio"])
-def delete_portfolio(portfolio_id: int, session: Session = Depends(db.get_session)):
+def delete_portfolio(portfolio_id: int, session: Session = Depends(get_db)):
     """Delete a portfolio and all its holdings"""
     try:
         logger.info(f"Deleting portfolio {portfolio_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
@@ -291,25 +292,25 @@ def delete_portfolio(portfolio_id: int, session: Session = Depends(db.get_sessio
 # Holdings Endpoints
 
 @router.post('/portfolio/{portfolio_id}/holdings', response_model=PortfolioOut, tags=["Holdings"], status_code=201)
-def add_holding(portfolio_id: int, holding: HoldingIn, session: Session = Depends(db.get_session)):
+def add_holding(portfolio_id: int, holding: HoldingIn, session: Session = Depends(get_db)):
     """Add a new holding to a portfolio"""
     try:
         logger.info(f"Adding holding {holding.ticker} to portfolio {portfolio_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
         
-        existing = session.query(db.Holding).filter(
-            db.Holding.portfolio_id == portfolio_id,
-            db.Holding.ticker == holding.ticker.upper()
+        existing = session.query(Holding).filter(
+            Holding.portfolio_id == portfolio_id,
+            Holding.ticker == holding.ticker.upper()
         ).first()
         
         if existing:
             raise HTTPException(status_code=400, detail=f"Holding with ticker {holding.ticker} already exists")
         
-        new_holding = db.Holding(
+        new_holding = Holding(
             portfolio_id=portfolio.id,
             ticker=holding.ticker.upper(),
             quantity=holding.quantity,
@@ -341,7 +342,7 @@ def add_holding(portfolio_id: int, holding: HoldingIn, session: Session = Depend
 
 
 @router.post('/portfolio/{portfolio_id}/holdings/bulk', response_model=PortfolioOut, tags=["Holdings"])
-def add_holdings_bulk(portfolio_id: int, holdings: List[HoldingIn], session: Session = Depends(db.get_session)):
+def add_holdings_bulk(portfolio_id: int, holdings: List[HoldingIn], session: Session = Depends(get_db)):
     """Add multiple holdings at once"""
     try:
         if len(holdings) > 100:
@@ -349,12 +350,12 @@ def add_holdings_bulk(portfolio_id: int, holdings: List[HoldingIn], session: Ses
         
         logger.info(f"Bulk adding {len(holdings)} holdings to portfolio {portfolio_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
         
-        existing_tickers = {h.ticker for h in session.query(db.Holding.ticker).filter(db.Holding.portfolio_id == portfolio_id).all()}
+        existing_tickers = {h.ticker for h in session.query(Holding.ticker).filter(Holding.portfolio_id == portfolio_id).all()}
         
         added_count = 0
         skipped_count = 0
@@ -367,7 +368,7 @@ def add_holdings_bulk(portfolio_id: int, holdings: List[HoldingIn], session: Ses
                 skipped_count += 1
                 continue
             
-            new_holding = db.Holding(
+            new_holding = Holding(
                 portfolio_id=portfolio.id,
                 ticker=ticker,
                 quantity=holding_data.quantity,
@@ -401,17 +402,17 @@ def add_holdings_bulk(portfolio_id: int, holdings: List[HoldingIn], session: Ses
 
 
 @router.put('/portfolio/{portfolio_id}/holdings/{holding_id}', response_model=PortfolioOut, tags=["Holdings"])
-def update_holding(portfolio_id: int, holding_id: int, holding: HoldingIn, session: Session = Depends(db.get_session)):
+def update_holding(portfolio_id: int, holding_id: int, holding: HoldingIn, session: Session = Depends(get_db)):
     """Update an existing holding"""
     try:
         logger.info(f"Updating holding {holding_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
         
-        existing_holding = session.get(db.Holding, holding_id)
+        existing_holding = session.get(Holding, holding_id)
         
         if not existing_holding or existing_holding.portfolio_id != portfolio_id:
             raise HTTPException(status_code=404, detail=f"Holding {holding_id} not found")
@@ -443,17 +444,17 @@ def update_holding(portfolio_id: int, holding_id: int, holding: HoldingIn, sessi
 
 
 @router.delete('/portfolio/{portfolio_id}/holdings/{holding_id}', response_model=PortfolioOut, tags=["Holdings"])
-def delete_holding(portfolio_id: int, holding_id: int, session: Session = Depends(db.get_session)):
+def delete_holding(portfolio_id: int, holding_id: int, session: Session = Depends(get_db)):
     """Delete a holding from a portfolio"""
     try:
         logger.info(f"Deleting holding {holding_id}")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
         
-        holding = session.get(db.Holding, holding_id)
+        holding = session.get(Holding, holding_id)
         
         if not holding or holding.portfolio_id != portfolio_id:
             raise HTTPException(status_code=404, detail=f"Holding {holding_id} not found")
@@ -479,19 +480,19 @@ def delete_holding(portfolio_id: int, holding_id: int, session: Session = Depend
 
 
 @router.delete('/portfolio/{portfolio_id}/holdings', tags=["Holdings"])
-def delete_holdings_bulk(portfolio_id: int, operation: BulkHoldingOperation, session: Session = Depends(db.get_session)):
+def delete_holdings_bulk(portfolio_id: int, operation: BulkHoldingOperation, session: Session = Depends(get_db)):
     """Delete multiple holdings at once"""
     try:
         logger.info(f"Bulk deleting {len(operation.holding_ids)} holdings")
         
-        portfolio = session.get(db.Portfolio, portfolio_id)
+        portfolio = session.get(Portfolio, portfolio_id)
         
         if not portfolio:
             raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found")
         
-        deleted_count = session.query(db.Holding).filter(
-            db.Holding.id.in_(operation.holding_ids),
-            db.Holding.portfolio_id == portfolio_id
+        deleted_count = session.query(Holding).filter(
+            Holding.id.in_(operation.holding_ids),
+            Holding.portfolio_id == portfolio_id
         ).delete(synchronize_session=False)
         
         portfolio.updated_at = datetime.utcnow()
@@ -516,7 +517,7 @@ def delete_holdings_bulk(portfolio_id: int, operation: BulkHoldingOperation, ses
 
 # Helper Functions
 
-def _build_portfolio_response(portfolio: db.Portfolio, include_metadata: bool = True) -> PortfolioOut:
+def _build_portfolio_response(portfolio: Portfolio, include_metadata: bool = True) -> PortfolioOut:
     """Build comprehensive portfolio response with calculations"""
     
     holdings_out = []
@@ -573,7 +574,7 @@ def _build_portfolio_response(portfolio: db.Portfolio, include_metadata: bool = 
     )
 
 
-def _calculate_portfolio_summary(portfolio: db.Portfolio) -> Dict[str, Any]:
+def _calculate_portfolio_summary(portfolio: Portfolio) -> Dict[str, Any]:
     """Calculate portfolio summary for list view"""
     
     total_value = 0.0

@@ -6,7 +6,8 @@ Complete implementation with error handling, logging, and comprehensive endpoint
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-import db
+from db import get_db, SessionLocal
+from models import Portfolio, Holding, Watchlist, WatchlistItem
 from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -53,7 +54,7 @@ class NetWorthResponse(BaseModel):
 @router.get('/wealth/net-worth', response_model=NetWorthResponse, tags=["Wealth"])
 def get_net_worth(
     portfolio_id: Optional[int] = Query(None, description="Filter by specific portfolio ID", ge=1),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """
     Calculate total net worth across all portfolios or a specific portfolio.
@@ -64,30 +65,30 @@ def get_net_worth(
         logger.info(f"Calculating net worth for portfolio_id={portfolio_id}")
         
         # Base query - filter out invalid holdings
-        base_query = session.query(db.Holding).filter(
-            db.Holding.quantity.isnot(None),
-            db.Holding.price.isnot(None),
-            db.Holding.quantity != 0
+        base_query = session.query(Holding).filter(
+            Holding.quantity.isnot(None),
+            Holding.price.isnot(None),
+            Holding.quantity != 0
         )
         
         if portfolio_id is not None:
-            base_query = base_query.filter(db.Holding.portfolio_id == portfolio_id)
+            base_query = base_query.filter(Holding.portfolio_id == portfolio_id)
         
         # Calculate assets
         assets_query = base_query.filter(
-            func.coalesce(func.lower(db.Holding.asset_type), 'stock') != 'liability'
+            func.coalesce(func.lower(Holding.asset_type), 'stock') != 'liability'
         ).with_entities(
-            func.coalesce(db.Holding.asset_type, 'Stock').label('asset_type'),
-            func.sum(db.Holding.quantity * db.Holding.price).label('total')
-        ).group_by(db.Holding.asset_type)
+            func.coalesce(Holding.asset_type, 'Stock').label('asset_type'),
+            func.sum(Holding.quantity * Holding.price).label('total')
+        ).group_by(Holding.asset_type)
         
         # Calculate liabilities
         liabilities_query = base_query.filter(
-            func.lower(db.Holding.asset_type) == 'liability'
+            func.lower(Holding.asset_type) == 'liability'
         ).with_entities(
-            db.Holding.asset_type,
-            func.sum(db.Holding.quantity * db.Holding.price).label('total')
-        ).group_by(db.Holding.asset_type)
+            Holding.asset_type,
+            func.sum(Holding.quantity * Holding.price).label('total')
+        ).group_by(Holding.asset_type)
         
         breakdown = {}
         total_assets = 0.0
@@ -126,23 +127,23 @@ def get_net_worth(
 
 
 @router.get('/wealth/net-worth/summary', tags=["Wealth"])
-def get_net_worth_summary(session: Session = Depends(db.get_session)):
+def get_net_worth_summary(session: Session = Depends(get_db)):
     """Get quick net worth summary"""
     try:
         assets_total = session.query(
-            func.sum(db.Holding.quantity * db.Holding.price)
+            func.sum(Holding.quantity * Holding.price)
         ).filter(
-            db.Holding.quantity.isnot(None),
-            db.Holding.price.isnot(None),
-            func.coalesce(func.lower(db.Holding.asset_type), 'stock') != 'liability'
+            Holding.quantity.isnot(None),
+            Holding.price.isnot(None),
+            func.coalesce(func.lower(Holding.asset_type), 'stock') != 'liability'
         ).scalar() or 0.0
         
         liabilities_total = session.query(
-            func.sum(db.Holding.quantity * db.Holding.price)
+            func.sum(Holding.quantity * Holding.price)
         ).filter(
-            db.Holding.quantity.isnot(None),
-            db.Holding.price.isnot(None),
-            func.lower(db.Holding.asset_type) == 'liability'
+            Holding.quantity.isnot(None),
+            Holding.price.isnot(None),
+            func.lower(Holding.asset_type) == 'liability'
         ).scalar() or 0.0
         
         liabilities_total = abs(float(liabilities_total))
@@ -164,23 +165,23 @@ def get_net_worth_summary(session: Session = Depends(db.get_session)):
 @router.get('/wealth/breakdown', tags=["Wealth"])
 def get_asset_breakdown(
     portfolio_id: Optional[int] = Query(None, ge=1),
-    session: Session = Depends(db.get_session)
+    session: Session = Depends(get_db)
 ):
     """Get detailed breakdown of assets by type"""
     try:
-        base_query = session.query(db.Holding).filter(
-            db.Holding.quantity.isnot(None),
-            db.Holding.price.isnot(None)
+        base_query = session.query(Holding).filter(
+            Holding.quantity.isnot(None),
+            Holding.price.isnot(None)
         )
         
         if portfolio_id is not None:
-            base_query = base_query.filter(db.Holding.portfolio_id == portfolio_id)
+            base_query = base_query.filter(Holding.portfolio_id == portfolio_id)
         
         breakdown_query = base_query.with_entities(
-            func.coalesce(db.Holding.asset_type, 'Stock').label('asset_type'),
-            func.count(db.Holding.id).label('count'),
-            func.sum(db.Holding.quantity * db.Holding.price).label('total')
-        ).group_by(db.Holding.asset_type)
+            func.coalesce(Holding.asset_type, 'Stock').label('asset_type'),
+            func.count(Holding.id).label('count'),
+            func.sum(Holding.quantity * Holding.price).label('total')
+        ).group_by(Holding.asset_type)
         
         results = []
         grand_total = 0.0
