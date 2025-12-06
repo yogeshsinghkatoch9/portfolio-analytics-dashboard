@@ -1,0 +1,42 @@
+{
+    "version": 2,
+    "name": "portfolio-analytics-dashboard",
+    "builds": [
+        {
+            "src": "frontend/**",
+            "use": "@vercel/static"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/(.*)",
+            "dest": "https://portfolio-analytics-dashboard-tlan.onrender.com/api/$1"
+        },
+        {
+            "src": "/docs",
+            "dest": "https://portfolio-analytics-dashboard-tlan.onrender.com/docs"
+        },
+        {
+            "src": "/openapi.json",
+            "dest": "https://portfolio-analytics-dashboard-tlan.onrender.com/openapi.json"
+        },
+        {
+            "src": "/health",
+            "dest": "https://portfolio-analytics-dashboard-tlan.onrender.com/health"
+        },
+        {
+            "src": "/(.*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot))",
+            "dest": "/frontend/$1"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/frontend/index.html"
+        }
+    ],
+    "rewrites": [
+        {
+            "source": "/api/:path*",
+            "destination": "https://portfolio-analytics-dashboard-tlan.onrender.com/api/:path*"
+        }
+    ]
+}

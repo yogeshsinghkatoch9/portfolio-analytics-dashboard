@@ -1,0 +1,27 @@
+# Vercel Deployment - Ignore Backend and Build Files
+backend/
+tests/
+.git/
+.github/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+node_modules/
+.env
+.env.local
+*.log
+docs/
+scripts/
+data/
+Dockerfile*
+docker-compose*.yml
+railway.*
+nginx.conf
+Procfile
+Makefile
+*.sh
+*.md
+!README.md
