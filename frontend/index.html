@@ -3786,18 +3786,65 @@
             }
         </script>
 
-        <!-- Emergency tab setup - ensure this runs -->
+        <!-- Standalone tab switching - works independently -->
         <script>
-            console.log('Emergency script loaded!');
-            // Force tab setup if not already done
-            setTimeout(() => {
-                if (typeof setupTabs === 'function') {
-                    console.log('Calling setupTabs from emergency script');
-                    setupTabs();
-                } else {
-                    console.error('setupTabs function not found!');
+            console.log('Tab switching script loaded');
+
+            // Wait for DOM to be ready
+            function initTabs() {
+                console.log('Initializing tabs...');
+                const tabButtons = document.querySelectorAll('.tab-button');
+                const tabContents = document.querySelectorAll('.tab-content');
+
+                console.log('Found', tabButtons.length, 'tab buttons');
+                console.log('Found', tabContents.length, 'tab contents');
+
+                if (tabButtons.length === 0) {
+                    console.error('No tab buttons found!');
+                    return;
                 }
-            }, 100);
+
+                tabButtons.forEach((button, index) => {
+                    console.log('Setting up tab:', button.dataset.tab);
+                    button.addEventListener('click', function () {
+                        const targetTab = this.dataset.tab;
+                        console.log('Clicked tab:', targetTab);
+
+                        // Remove active from all buttons
+                        tabButtons.forEach(btn => {
+                            btn.classList.remove('text-blue-600', 'border-blue-600');
+                            btn.classList.add('text-gray-500', 'border-transparent');
+                        });
+
+                        // Add active to clicked button
+                        this.classList.remove('text-gray-500', 'border-transparent');
+                        this.classList.add('text-blue-600', 'border-blue-600');
+
+                        // Hide all tab contents
+                        tabContents.forEach(content => {
+                            content.classList.add('hidden');
+                        });
+
+                        // Show target content
+                        const targetContent = document.getElementById(targetTab + '-tab');
+                        if (targetContent) {
+                            targetContent.classList.remove('hidden');
+                            console.log('Showed:', targetTab + '-tab');
+                        } else {
+                            console.error('Content not found:', targetTab + '-tab');
+                        }
+                    });
+                });
+
+                console.log('Tab setup complete!');
+            }
+
+            // Call immediately if DOM ready, otherwise wait
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initTabs);
+            } else {
+                initTabs();
+            }
         </script>
 </body>
 
