@@ -115,3 +115,71 @@ Thank you for using VisionWealth.
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/reports/generate-enhanced")
+async def generate_enhanced_report(
+    portfolio_data: Dict[str, Any] = Body(...),
+    include_ai_insights: bool = True
+):
+    """
+    Generate enhanced PDF report with professional templates and AI insights
+    
+    Returns a beautifully formatted PDF with:
+    - Professional cover page
+    - Executive summary (AI-powered if enabled)
+    - Risk analysis
+    - Holdings tables
+    - Sector allocation
+    - AI recommendations
+    """
+    try:
+        from enhanced_pdf import get_pdf_generator
+        from ai_service import get_ai_service
+        from fastapi.responses import Response
+        from datetime import datetime
+        
+        # Extract data
+        holdings = portfolio_data.get('holdings', [])
+        analytics = portfolio_data.get('analytics', {})
+        
+        # Get AI insights if requested
+        ai_insights = None
+        if include_ai_insights:
+            try:
+                ai_service = get_ai_service()
+                if ai_service.is_available():
+                    portfolio_context = {
+                        'holdings': holdings,
+                        'total_value': sum(h.get('value', 0) for h in holdings),
+                        'risk_metrics': analytics.get('risk_metrics', {}),
+                        'sectors': analytics.get('allocation', {}).get('sectors', {})
+                    }
+                    ai_insights = ai_service.generate_portfolio_analysis(portfolio_context)
+            except Exception as e:
+                logger.warning(f"AI insights generation failed: {e}")
+                # Continue without AI insights
+        
+        #Generate PDF
+        pdf_generator = get_pdf_generator()
+        pdf_bytes = pdf_generator.generate_report(
+            portfolio_data=portfolio_data,
+            analytics=analytics,
+            ai_insights=ai_insights
+        )
+        
+        # Return PDF
+        filename = f"Portfolio_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Enhanced report generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
