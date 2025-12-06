@@ -25,3 +25,4 @@ passlib[bcrypt]
 python-jose[cryptography]
 bcrypt
 slowapi>=0.1.9
+seaborn
