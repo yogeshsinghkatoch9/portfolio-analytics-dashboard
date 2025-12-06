@@ -1,270 +1,556 @@
-# Product Requirements Document
-## Portfolio Analytics Dashboard
+# Portfolio Builder + Portfolio Analytics Platform
+## Complete Product Requirements Document
 
-**Version:** 1.0  
+**Version:** 2.0 (Comprehensive)  
 **Last Updated:** December 5, 2025  
-**Author:** Product Team  
-**Status:** 🟢 Live in Production
+**Prepared By:** Yogesh Singh Katoch  
+**Status:** 🟢 Phase 1 Complete, Phase 2-5 Planned
 
 ---
 
-## Executive Summary
+## 🔵 SECTION 1 — PRODUCT SUMMARY
 
-Portfolio Analytics Dashboard is a comprehensive web application that enables users to analyze investment portfolios, assess risk, and generate detailed reports. The platform provides real-time market data integration, AI-powered insights, and professional-grade analytics.
+### Vision
+Build the most complete, future-proof portfolio analytics platform, combining:
 
----
+✔ **Portfolio Builder** - Manually add tickers and build portfolios from scratch  
+✔ **Current Portfolio Analyzer** - Upload CSV/XLS files with real positions  
+✔ **Automated Insights** - OpenAI-generated summaries and risk analysis  
+✔ **Real-Time Market Data** - Auto-fetch from Yahoo Finance API  
+✔ **Professional Reports** - Heatmaps, charts, benchmarks, PDF exports  
+✔ **Unified Dashboard** - All features in one platform with perfect UX/UI  
 
-## Product Vision
-
-**Mission**: Democratize professional portfolio analytics for individual investors and financial advisors.
-
-**Target Users**:
-- Individual investors managing personal portfolios
-- Financial advisors managing client portfolios  
-- Portfolio managers seeking quick analysis tools
-
----
-
-## Features & Requirements
-
-### 1. Portfolio Upload & Management
-
-**User Story**: As a user, I want to upload my portfolio data so that I can analyze my investments.
-
-**Requirements**:
-- ✅ Support CSV and Excel file formats
-- ✅ Automatic column detection and mapping
-- ✅ Handle various broker export formats
-- ✅ Validate data integrity before processing
-- ✅ Support for stocks, ETFs, bonds, crypto
-
-**Acceptance Criteria**:
-- [ ] File upload completes in <5 seconds
-- [ ] Supports files up to 10MB
-- [ ] Handles 1000+ holdings  
-- [ ] Clear error messages for invalid data
+### Current Status (Phase 1)
+✅ **DEPLOYED & LIVE**
+- Backend: https://portfolio-analytics-dashboard-tlan.onrender.com
+- Frontend: https://portfolio-analytics-dashboard-seven.vercel.app
+- API Docs: https://portfolio-analytics-dashboard-tlan.onrender.com/docs
 
 ---
 
-### 2. Portfolio Builder
+## 🔵 SECTION 2 — USER REQUIREMENTS
 
-**User Story**: As a financial advisor, I want to build hypothetical portfolios so that I can present proposals to clients.
-
-**Requirements**:
-- ✅ Search for assets by symbol or name
-- ✅ Add/remove assets with custom allocations
-- ✅ Real-time market data fetching
-- ✅ Weight-based portfolio construction
-- ✅ Simulate portfolio performance
-
-**Acceptance Criteria**:
-- [ ] Asset search returns results in <1 second
-- [ ] Support for 50+ simultaneous assets
-- [ ] Real-time price updates
+Users can:
+1. ✅ Search & add tickers to build portfolios
+2. ✅ Automatically fetch data (price, sector, beta, yields)
+3. ✅ View deep analytics: allocation, risk, correlation, sectors
+4. ✅ Upload real portfolios (CSV/XLS) and analyze
+5. ✅ Export client-ready reports
+6. 🔄 Receive AI summaries (in progress)
+7. ✅ See all analytics clearly and professionally
 
 ---
 
-### 3. Analytics & Insights
+## 🔵 SECTION 3 — COMPETITIVE ADVANTAGE
 
-**User Story**: As an investor, I want detailed analytics on my portfolio so that I can make informed decisions.
+### vs Morningstar
+✅ AI summaries  
+✅ CSV upload freedom  
+✅ Custom professional reports  
+✅ Real-time OpenAI analysis  
 
-**Requirements**:
-- ✅ Risk metrics (volatility, VaR, Sharpe ratio)
-- ✅ Sector allocation breakdown
-- ✅ Dividend yield analysis
-- ✅ Performance vs benchmarks (S&P 500)
-- ✅ Correlation matrix
-- ✅ Tax loss harvesting opportunities
+### vs Empower/Personal Capital
+✅ Deep analytics  
+✅ CSV ingest  
+✅ Heatmaps, VaR, Sharpe  
+✅ AI commentary  
 
-**Acceptance Criteria**:
-- [ ] Analytics calculated in <3 seconds
-- [ ] Visual charts render instantly
-- [ ] Mobile-responsive design
+### vs Kubera
+✅ Advanced analytics  
+✅ Professional reports  
+✅ AI insights  
 
----
-
-### 4. AI-Powered Analysis
-
-**User Story**: As a user, I want AI-generated insights so that I can quickly understand my portfolio's strengths and weaknesses.
-
-**Requirements**:
-- ✅ Natural language portfolio summary
-- ✅ Risk assessment narrative
-- ✅ Diversification recommendations
-- ✅ Growth vs income analysis
-
-**Acceptance Criteria**:
-- [ ] AI analysis generates in <5 seconds
-- [ ] Insights are actionable and clear
-- [ ] Supports multiple risk profiles
+**Your Advantage**: Everything above + AI + Builder + Upload + Export in ONE product.
 
 ---
 
-### 5. Reporting & Export
+## 🔵 SECTION 4 — PLATFORM MODULES
 
-**User Story**: As a financial advisor, I want to generate professional reports so that I can share them with clients.
+### MODULE 1 — Portfolio Builder ✅
 
-**Requirements**:
-- ✅ PDF report generation with branding
-- ✅ CSV data export
-- ✅ Customizable report sections
-- ✅ Client-ready formatting
+**Features:**
+1. **Ticker Search**
+   - Search bar with autocomplete
+   - Fetches from Yahoo Finance:
+     - Name, Price, Sector, Industry
+     - Beta, Dividend yield, 1Y return
+     - Market cap
 
-**Acceptance Criteria**:
-- [ ] PDF generates in <10 seconds
-- [ ] Reports are print-ready
-- [ ] Include all charts and tables
+2. **Add to Portfolio**
+   - Choose shares or dollar amount
+   - Auto-calculates value and weight
 
----
+3. **Holdings Table**
+   - Columns: Symbol, Name, Shares, Price, Value, Weight, Sector
+   - Remove button per holding
 
-## Technical Requirements
+4. **Live Analytics:**
+   - 🔹 Asset Allocation (pie chart)
+   - 🔹 Sector Exposure (bar chart)
+   - 🔹 Correlation Heatmap
+   - 🔹 Risk Metrics: Beta, Std Dev, Sharpe, Max Drawdown, VaR
+   - 🔹 Benchmark vs S&P 500
+   - 🔹 AI Summary (planned)
 
-### Frontend
-- **Framework**: Vanilla HTML/CSS/JavaScript
-- **Charts**: Chart.js 4.4.0
-- **Styling**: Tailwind CSS
-- **Hosting**: Vercel
-
-### Backend
-- **Framework**: FastAPI 0.104+
-- **Python**: 3.11
-- **Database**: SQLite (production: PostgreSQL optional)
-- **API**: RESTful with Swagger docs
-- **Hosting**: Render.com
-
-### Integrations
-- **Market Data**: Yahoo Finance (yfinance)
-- **AI**: Future integration with OpenAI/Claude
-- **Documentation**: Confluence (automated sync)
+**Implementation Status:** ✅ Core complete, AI integration pending
 
 ---
 
-## Security Requirements
+### MODULE 2 — Portfolio Upload ✅
 
-- [ ] Input validation on all uploads
-- [ ] SQL injection prevention
-- [ ] XSS protection
-- [ ] Rate limiting on API endpoints
-- [ ] HTTPS only for production
-- [ ] Secure credential storage (.env)
+**Features:**
+1. **File Upload**
+   - Supports CSV, XLS, XLSX
+   - Auto-detects columns
+   - Validates data
+   - Converts to standardized JSON
 
----
+2. **Additional Analytics:**
+   - ✅ Unrealized G/L
+   - ✅ Cost basis analysis
+   - 🔄 ST vs LT capital gains
+   - ✅ Dividend forecast
+   - 🔄 Wash-sale warnings
+   - ✅ Attribution analysis
+   - ✅ Benchmark comparison
 
-## Performance Requirements
+3. **Export:**
+   - ✅ PDF reports
+   - ✅ Chart images
+   - ✅ Processed CSV data
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| Page Load Time | <2s | ✅ 1.5s |
-| API Response Time | <1s | ✅ 800ms |
-| Upload Processing | <5s | ✅ 3s |
-| PDF Generation | <10s | ⚠️ 8s |
-| Concurrent Users | 100+ | ✅ Tested |
-
----
-
-## Success Metrics
-
-### Key Performance Indicators (KPIs)
-
-1. **User Engagement**
-   - Target: 80% of users upload at least one portfolio
-   - Current: TBD
-
-2. **Feature Adoption**
-   - Target: 50% use portfolio builder
-   - Current: TBD
-
-3. **Report Generation**
-   - Target: Average 3 reports per user
-   - Current: TBD
-
-4. **Performance**
-   - Target: 99% uptime
-   - Current: ✅ 99.9%
-
-5. **Error Rate**
-   - Target: <1% failed uploads
-   - Current: ✅ 0.5%
+**Implementation Status:** ✅ Core complete, advanced features in progress
 
 ---
 
-## Release Plan
+## 🔵 SECTION 5 — ANALYTICS ENGINE
 
-### Phase 1: MVP ✅ COMPLETE
-- [x] Portfolio upload
-- [x] Basic analytics
-- [x] Charts and visualizations
-- [x] Deployment to production
+### 1. Asset Allocation ✅
+- Group by Asset Type, Sector, Region
+- JSON output for charts
 
-### Phase 2: Enhanced Analytics (Q1 2026)
-- [ ] Advanced risk metrics
+### 2. Risk Calculations ✅
+```python
+# Beta (weighted)
+beta = Σ(weight_i × beta_i)
+
+# Standard Deviation
+std = sqrt(Σ(daily_returns²) / n)
+
+# Sharpe Ratio
+sharpe = (mean_return - risk_free_rate) / std
+
+# Max Drawdown
+max_dd = (trough - peak) / peak
+
+# Value at Risk (95%)
+var_95 = percentile(returns, 5)
+```
+
+### 3. Correlation Matrix ✅
+```python
+correlation = returns_dataframe.corr()
+```
+
+### 4. Benchmark Comparison ✅
+- Fetches SPY or ^GSPC data
+- Compares portfolio performance
+
+### 5. Dividend Forecast ✅
+```python
+dividend = quantity × dividend_per_share
+```
+
+### 6. AI Insights 🔄
+**Planned OpenAI Integration:**
+
+```python
+prompt = f"""
+Analyze this portfolio:
+{analytics_json}
+
+Provide:
+1. Summary
+2. Risks
+3. Concentration issues
+4. Opportunities
+5. 12-month outlook
+
+Use simple client-friendly language.
+"""
+```
+
+---
+
+## 🔵 SECTION 6 — REPORT GENERATION
+
+### PDF Components ✅
+1. **Cover Page**
+   - Portfolio name, owner, date
+
+2. **Charts**
+   - Asset allocation pie
+   - Sector bar chart
+   - Correlation heatmap
+   - Performance line chart
+   - Dividend forecast
+
+3. **Tables**
+   - Holdings table
+   - Risk metrics
+   - G/L analysis
+
+4. **AI Sections** 🔄
+   - Summary
+   - Risk outlook
+   - Rebalancing suggestions
+
+**Storage:** Local/S3 compatible
+
+---
+
+## 🔵 SECTION 7 — TECHNICAL ARCHITECTURE
+
+### Frontend (Current)
+```
+- Framework: Vanilla HTML/CSS/JavaScript
+- Styling: Tailwind CSS
+- Charts: Chart.js 4.4.0
+- State: Local variables
+- API: Fetch API
+- Hosting: Vercel
+```
+
+### Backend (Current)
+```
+- Framework: FastAPI (Python 3.11)
+- Database: SQLite (production-ready)
+- Cache: In-memory (Redis planned)
+- Market Data: yfinance
+- Analytics: Pandas, NumPy
+- Reports: LaTeX/PDF generation
+- Hosting: Render.com (Docker)
+```
+
+### Planned Enhancements
+```
+- AI: OpenAI API integration
+- Cache: Redis for pricing
+- Frontend: Migrate to React/Next.js
+- State: Redux Toolkit
+- Real-time: WebSocket pricing
+```
+
+---
+
+## 🔵 SECTION 8 — API ROUTES
+
+### Authentication 🔄
+```
+POST /auth/signup
+POST /auth/login
+GET /auth/me
+```
+
+### Portfolio Builder ✅
+```
+GET /api/market/search?q=TSLA
+POST /api/v2/portfolio
+POST /api/v2/portfolio/{id}/holdings
+DELETE /api/v2/portfolio/{id}/holdings/{position_id}
+GET /api/v2/portfolio/{id}/analytics
+POST/api/v2/portfolio/{id}/report
+```
+
+### File Upload ✅
+```
+POST /upload-portfolio
+GET /api/portfolio/summary
+GET /api/portfolio/analytics
+POST /api/portfolio/export
+```
+
+### Implemented Endpoints
+```
+GET /health
+GET /docs
+POST /api/v2/market/quotes/batch
+GET /api/v2/market/ticker/{ticker}/analysis
+GET /api/v2/market/historical/{ticker}
+POST /api/v2/ai/analyze
+```
+
+---
+
+## 🔵 SECTION 9 — DATABASE DESIGN
+
+### Current Tables
+```sql
+-- Portfolio storage
+CREATE TABLE portfolios (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Holdings
+CREATE TABLE holdings (
+    id INTEGER PRIMARY KEY,
+    portfolio_id INTEGER,
+    ticker VARCHAR(10),
+    quantity FLOAT,
+    price FLOAT,
+    cost_basis FLOAT,
+    asset_type VARCHAR(50),
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+);
+
+-- Watchlist
+CREATE TABLE watchlists (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255)
+);
+
+CREATE TABLE watchlist_items (
+    id INTEGER PRIMARY KEY,
+    watchlist_id INTEGER,
+    ticker VARCHAR(10),
+    added_at TIMESTAMP,
+    FOREIGN KEY (watchlist_id) REFERENCES watchlists(id)
+);
+```
+
+### Planned Tables
+```sql
+-- Users (authentication)
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
+    full_name VARCHAR(255),
+    role VARCHAR(50),
+    created_at TIMESTAMP
+);
+
+-- Reports
+CREATE TABLE reports (
+    id INTEGER PRIMARY KEY,
+    portfolio_id INTEGER,
+    user_id INTEGER,
+    report_type VARCHAR(50),
+    file_path VARCHAR(500),
+    created_at TIMESTAMP
+);
+```
+
+---
+
+## 🔵 SECTION 10 — UI WIREFRAMES
+
+### Current Implementation
+
+#### 1. Dashboard Layout
+```
+┌─────────────────────────────────────────┐
+│ Logo    Portfolio Analytics    Profile  │
+├─────────────────────────────────────────┤
+│ [Builder] [Current Portfolio] [Analytics]│
+├─────────────────────────────────────────┤
+│                                          │
+│  Tab Content (Builder/Dashboard/Analytics)│
+│                                          │
+│  - Summary Cards                         │
+│  - Charts (Pie, Bar, Line)              │
+│  - Holdings Table                        │
+│  - Risk Metrics                          │
+│                                          │
+└─────────────────────────────────────────┘
+```
+
+#### 2. Portfolio Builder
+```
+Search Section:
+[Search ticker...] [🔍]
+
+Results:
+┌────────────────────────────────┐
+│ AAPL | Apple Inc | [+ Add]     │
+│ TSLA | Tesla Inc | [+ Add]     │
+└────────────────────────────────┘
+
+Holdings Table:
+Symbol | Shares | Price | Value | % | Sector | [×]
+
+Charts:
+[Pie: Asset Types] [Bar: Sectors]
+[Heatmap: Correlation] [Line: vs S&P 500]
+
+AI Summary Box:
+┌────────────────────────────────┐
+│ 📊 AI Analysis                 │
+│ Your portfolio shows...        │
+└────────────────────────────────┘
+
+[Generate PDF Report]
+```
+
+#### 3. Upload Portfolio
+```
+Upload Section:
+┌────────────────────────────────┐
+│ 📁 Drag & drop or click        │
+│    to upload CSV/Excel         │
+└────────────────────────────────┘
+
+Preview Table:
+Symbol | Qty | Price | Value | Sector
+
+[Run Analytics] → Shows same analytics as Builder
+```
+
+---
+
+## 🔵 SECTION 11 — DEVELOPMENT ROADMAP
+
+### Phase 1 — Core Infrastructure ✅ COMPLETE
+- [x] Auth framework (basic)
+- [x] Portfolio Builder backend
+- [x] Ticker search integration
+- [x] Database setup
+- [x] Deployment (Render + Vercel)
+
+### Phase 2 — Analytics Engine ✅ COMPLETE
+- [x] Risk metrics
+- [x] Asset allocation
+- [x] Correlation heatmap
+- [x] Benchmark comparison
+- [x] Dividend analysis
+
+### Phase 3 — Upload Engine ✅ COMPLETE
+- [x] Auto-mapping columns
+- [x] CSV/Excel parser
+- [x] Data validation
+- [x] Analytics integration
+
+### Phase 4 — Reports + AI 🔄 IN PROGRESS
+- [x] PDF export framework
+- [ ] OpenAI integration
+- [ ] AI-generated summaries
+- [ ] Enhanced PDF templates
+
+### Phase 5 — Polish & Advanced Features 📋 PLANNED
+- [ ] UI/UX refinements
 - [ ] Monte Carlo simulation
-- [ ] Historical backtesting
-- [ ] Custom benchmarks
-
-### Phase 3: Collaboration (Q2 2026)
-- [ ] Multi-user support
-- [ ] Shared portfolios  
-- [ ] Client portal for advisors
-- [ ] Role-based permissions
-
-### Phase 4: AI Integration (Q3 2026)
-- [ ] AI chatbot for portfolio Q&A
-- [ ] Automated rebalancing suggestions
-- [ ] Market news integration
-- [ ] Predictive analytics
+- [ ] Auto-rebalancing suggestions
+- [ ] Broker integrations (Plaid)
+- [ ] Real-time streaming data
+- [ ] ML optimization
 
 ---
 
-## Dependencies
+## 🔵 SECTION 12 — ADVANCED FEATURES (Future)
 
-### External Services
-- Yahoo Finance API (free tier)
-- Render.com hosting
-- Vercel CDN
-- GitHub for CI/CD
+### Planned Enhancements
+1. **Monte Carlo Simulation**
+   - Predict portfolio outcomes over time
+   - Risk-adjusted return projections
 
-### Libraries
-- FastAPI, Pandas, NumPy (backend)
-- Chart.js, Tailwind CSS (frontend)
-- yfinance for market data
-- SQLAlchemy for database
+2. **Auto Rebalancing**
+   - Suggest trades to maintain target allocation
+   - Tax-aware rebalancing
 
----
+3. **Broker Connections**
+   - Integrate with Plaid
+   - Auto-sync positions
 
-## Risks & Mitigation
+4. **Real-Time Streaming**
+   - WebSocket price updates
+   - Live portfolio value
 
-| Risk | Impact | Probability | Mitigation |
-|------|--------|-------------|------------|
-| Yahoo Finance API limits | High | Medium | Implement caching, rate limiting |
-| Database scaling | Medium | Low | Migrate to PostgreSQL if needed |
-| Cold starts (Render free) | Medium | High | Upgrade to paid tier for production |
-| Browser compatibility | Low | Low | Test on major browsers |
-
----
-
-## Open Questions
-
-1. **Pricing Model**: Free vs freemium vs paid?
-2. **User Authentication**: Do we need login for next phase?
-3. **Data Privacy**: How long to store uploaded portfolios?
-4. **Mobile App**: Native mobile app or PWA?
+5. **Machine Learning**
+   - Portfolio optimization
+   - Risk prediction
+   - Correlation forecasting
 
 ---
 
-## Appendix
+## 🔵 SECTION 13 — IMPLEMENTATION STATUS
 
-### API Endpoints
-See: [API Documentation](https://portfolio-analytics-dashboard-tlan.onrender.com/docs)
+### Features Completed ✅
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Portfolio Builder | ✅ | Fully functional |
+| CSV Upload | ✅ | Multiple formats supported |
+| Asset Allocation Charts | ✅ | Pie, bar, line charts |
+| Risk Metrics | ✅ | Beta, Sharpe, VaR, etc. |
+| Correlation Heatmap | ✅ | Python backend |
+| Benchmark Comparison | ✅ | vs S&P 500 |
+| PDF Reports | ✅ | LaTeX-based |
+| API Documentation | ✅ | Swagger UI |
+| Deployment | ✅ | Render + Vercel |
+| Confluence Integration | ✅ | Auto-sync docs |
 
-### User Flows
-See: `docs/user_flows.md`
+### In Progress 🔄
+| Feature | Status | ETA |
+|---------|--------|-----|
+| AI Insights | 🔄 | Q1 2026 |
+| User Authentication | 🔄 | Q1 2026 |
+| Advanced Tax Analysis | 🔄 | Q2 2026 |
 
-### Design Mockups
-See: `docs/design/`
+### Planned 📋
+| Feature | Status | ETA |
+|---------|--------|-----|
+| Monte Carlo | 📋 | Q2 2026 |
+| Broker Integration | 📋 | Q3 2026 |
+| Mobile App | 📋 | Q4 2026 |
 
 ---
 
-**Document Status**: 🟢 Active  
-**Review Cycle**: Monthly  
-**Next Review**: January 5, 2026
+## 🎯 NEXT STEPS
+
+### For Developers
+1. Review complete codebase at GitHub
+2. Check API docs at `/docs` endpoint
+3. Follow Confluence setup guide for documentation
+4. Review PRD for roadmap alignment
+
+### For Product Team
+1. Prioritize Phase 4 features
+2. Define OpenAI integration requirements
+3. Design advanced PDF templates
+4. Plan user authentication flow
+
+### For Stakeholders
+1. Review live deployment
+2. Test current features
+3. Provide feedback on UX/UI
+4. Approve Phase 4 budget
+
+---
+
+## 📞 RESOURCES
+
+**Live Platform:**
+- Frontend: https://portfolio-analytics-dashboard-seven.vercel.app
+- Backend API: https://portfolio-analytics-dashboard-tlan.onrender.com
+- API Docs: https://portfolio-analytics-dashboard-tlan.onrender.com/docs
+
+**Documentation:**
+- GitHub: https://github.com/yogeshsinghkatoch9/portfolio-analytics-dashboard
+- Deployment Guide: See `walkthrough.md`
+- API Reference: See `/docs` endpoint
+
+**Development:**
+- Language: Python 3.11, JavaScript
+- Frameworks: FastAPI, Vanilla JS
+- Database: SQLite
+- Hosting: Render.com, Vercel
+
+---
+
+**Document Status:** 🟢 Active and Maintained  
+**Review Cycle:** Monthly  
+**Next Review:** January 5, 2026
+
+**This PRD will be automatically synced to Confluence** using the automation setup created.
