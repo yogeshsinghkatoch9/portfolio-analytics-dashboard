@@ -3062,7 +3062,7 @@
 
                         timeout = setTimeout(async () => {
                             try {
-                                const response = await fetch(`${API_URL}/api/v2/market/search/${query}`);
+                                const response = await fetch(`${API_URL}/api/market/search?q=${query}`);
                                 searchSpinner.classList.add('hidden');
                                 searchIcon.classList.remove('hidden');
 
