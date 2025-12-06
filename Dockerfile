@@ -8,9 +8,13 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements files
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements-langchain.txt .
+
+# Install Python dependencies (both standard and LangChain)
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-langchain.txt
 
 # Copy backend code
 COPY backend/ .
