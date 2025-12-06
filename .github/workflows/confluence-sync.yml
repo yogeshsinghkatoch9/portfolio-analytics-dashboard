@@ -1,0 +1,46 @@
+name: Sync Docs to Confluence
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - '.gemini/antigravity/brain/**/*.md'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-confluence:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r confluence_requirements.txt
+      
+      - name: Sync to Confluence
+        env:
+          CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
+          CONFLUENCE_EMAIL: ${{ secrets.CONFLUENCE_EMAIL }}
+          CONFLUENCE_API_TOKEN: ${{ secrets.CONFLUENCE_API_TOKEN }}
+          CONFLUENCE_SPACE_KEY: ${{ secrets.CONFLUENCE_SPACE_KEY }}
+          CONFLUENCE_PARENT_PAGE_ID: ${{ secrets.CONFLUENCE_PARENT_PAGE_ID }}
+        run: |
+          python confluence_sync.py
+      
+      - name: Notify on Success
+        if: success()
+        run: echo "✅ Documentation synced to Confluence successfully!"
+      
+      - name: Notify on Failure
+        if: failure()
+        run: echo "❌ Failed to sync documentation to Confluence"
